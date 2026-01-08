@@ -1,0 +1,14 @@
+from src.agents.image.agent import ImageAgent
+
+agent = ImageAgent()
+app = agent.app
+
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Multi-Agent DevOps Agent is running!",
+        "agent": agent.name,
+        "available_tools": list(agent.tools.keys()),
+        "docs": "/docs"
+    }
