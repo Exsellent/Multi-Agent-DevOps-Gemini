@@ -1,0 +1,20 @@
+from agents.metrics_agent.agent import MetricsAgent
+
+agent = MetricsAgent()
+app = agent.app
+
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Multi-Agent DevOps Agent is running!",
+        "agent": agent.name,
+        "available_tools": list(agent.tools.keys()),
+        "docs": "/docs"
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(agent.app, host="0.0.0.0", port=8307)
