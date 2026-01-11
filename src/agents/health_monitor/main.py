@@ -1,6 +1,6 @@
-from src.agents.image.agent import ImageAgent
+from agents.health_monitor.agent import HealthMonitorAgent
 
-agent = ImageAgent()
+agent = HealthMonitorAgent()
 app = agent.app
 
 
@@ -12,3 +12,9 @@ async def root():
         "available_tools": list(agent.tools.keys()),
         "docs": "/docs"
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(agent.app, host="0.0.0.0", port=8306)
