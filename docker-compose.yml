@@ -1,0 +1,217 @@
+services:
+  planner:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.planner
+    ports:
+      - "8301:8301"
+    env_file:
+      - .env
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8301/health')\" || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agent-net
+    dns:
+      - 8.8.8.8
+
+  progress:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.progress
+    ports:
+      - "8302:8302"
+    env_file:
+      - .env
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8302/health')\" || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agent-net
+    dns:
+      - 8.8.8.8
+
+  risks:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.risks
+    ports:
+      - "8303:8303"
+    env_file:
+      - .env
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8303/health')\" || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agent-net
+    dns:
+      - 8.8.8.8
+
+  digest:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.digest
+    ports:
+      - "8304:8304"
+    env_file:
+      - .env
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8304/health')\" || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agent-net
+    dns:
+      - 8.8.8.8
+
+  architecture_intelligence:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.architecture_intelligence
+    ports:
+      - "8305:8305"
+    env_file:
+      - .env
+    volumes:
+      - ./assets:/app/assets:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8305/health')\" || exit 1" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - agent-net
+    dns:
+      - 8.8.8.8
+
+  health_monitor:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.health_monitor
+    ports:
+      - "8306:8306"
+    env_file:
+      - .env
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8306/health')\" || exit 1" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - agent-net
+    dns:
+      - 8.8.8.8
+
+  metrics_agent:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.metrics_agent
+    ports:
+      - "8307:8307"
+    env_file:
+      - .env
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8307/health')\" || exit 1" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - agent-net
+    dns:
+      - 8.8.8.8
+
+  marathon:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.marathon
+    ports:
+      - "8308:8308"
+    env_file:
+      - .env
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8308/health')\" || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agent-net
+    dns:
+      - 8.8.8.8
+
+  code_execution:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.code_execution
+    ports:
+      - "8309:8309"
+    env_file:
+      - .env
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8309/health')\" || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agent-net
+    dns:
+      - 8.8.8.8
+
+  ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ui
+
+    ports:
+      - "8080:80"
+    networks:
+      - agent-net
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost/index.html" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    dns:
+      - 8.8.8.8
+
+  static:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.static
+
+    ports:
+      - "8000:80"
+    networks:
+      - agent-net
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost/architecture.png" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    dns:
+      - 8.8.8.8
+
+  n8n:
+    image: n8nio/n8n
+    restart: always
+    ports:
+      - "5679:5678"
+    volumes:
+      - n8n_gemini:/home/node/.n8n
+    env_file:
+      - .env
+    networks:
+      - agent-net
+
+networks:
+  agent-net:
+    driver: bridge
+
+volumes:
+  n8n_gemini:
