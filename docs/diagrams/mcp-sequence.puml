@@ -1,0 +1,93 @@
+@startuml
+!theme plain
+skinparam shadowing false
+skinparam backgroundColor white
+
+' Colors of the participants
+skinparam participant {
+  BackgroundColor #F0F8FF
+  BorderColor #333333
+  FontSize 13
+  FontStyle bold
+}
+
+' Default arrow colors
+skinparam sequenceArrowThickness 2
+skinparam sequenceLifeLineBorderColor #666666
+
+autonumber
+
+title MCP Message Flow — Full System (9 Agents)
+
+participant "n8n\n(Orchestrator)" as N8N #FFA500
+participant "Planner Agent\n:8301" as Planner #87CEEB
+participant "Risks Agent\n:8303" as Risks #F08080
+participant "Architecture Intelligence\n:8305" as Architecture #DDA0DD
+participant "Code Execution Agent\n:8309" as CodeExec #00CED1
+participant "Marathon Agent\n:8308" as Marathon #BA55D3
+participant "Progress Agent\n:8302" as Progress #90EE90
+participant "Digest Agent\n:8304" as Digest #FFFFE0
+participant "Metrics Agent\n:8307" as Metrics #008080
+
+' 1. n8n triggers the workflow and calls main agent (Planner)
+N8N -[#0000FF]> Planner : <color:blue><b>POST /mcp { method: plan_with_reasoning, params }</b></color>
+activate Planner #E6F3FF
+
+' 2. Internal reasoning in Planner
+Planner -[#808080]> Planner : <color:gray><i>Multi-step CoT reasoning\n(classification, decomposition,\npredictive estimation)</i></color>
+
+' 3. Planner delegates to specialized agents (parallel MCP calls)
+Planner -[#DC143C]> Risks : <color:red><b>MCP request: analyze_risks</b></color>
+activate Risks #FFE4E4
+Risks --[#DC143C]> Planner : <color:red>Deep risk analysis + mitigation</color>
+deactivate Risks
+
+Planner -[#8B4513]> Architecture : <color:brown><b>MCP request: analyze_architecture_deep</b></color>
+activate Architecture #F3E6FF
+Architecture --[#8B4513]> Planner : <color:brown>Failure propagation + recommendations</color>
+deactivate Architecture
+
+Planner -[#00CED1]> CodeExec : <color:cyan><b>MCP request: generate_and_test_code</b></color>
+activate CodeExec #E0FFFF
+CodeExec --[#00CED1]> Planner : <color:cyan>Code + test results + self-correction</color>
+deactivate CodeExec
+
+Planner -[#BA55D3]> Marathon : <color:magenta><b>MCP request: run_marathon_task</b></color>
+activate Marathon #F8E0FF
+Marathon --[#BA55D3]> Planner : <color:magenta>Long-running plan + thought signature</color>
+deactivate Marathon
+
+Planner -[#228B22]> Progress : <color:green><b>MCP request: jira_velocity</b></color>
+activate Progress #E6FFE6
+Progress --[#228B22]> Planner : <color:green>Velocity + completion status</color>
+deactivate Progress
+
+Planner -[#9932CC]> Digest : <color:purple><b>MCP request: daily_digest</b></color>
+activate Digest #FFF0FF
+Digest --[#9932CC]> Planner : <color:purple>Aggregated human-readable summary</color>
+deactivate Digest
+
+Planner -[#008080]> Metrics : <color:teal><b>MCP request: get_metrics</b></color>
+activate Metrics #E0FFFF
+Metrics --[#008080]> Planner : <color:teal>Record counters & latency</color>
+deactivate Metrics
+
+deactivate Planner
+
+' 10. Planner returns aggregated result to n8n
+Planner --[#0000FF]> N8N : <color:blue><b>Structured JSON response\n(with reasoning chains)</b></color>
+
+legend right
+  |= Color |= Meaning                          |
+  |= <color:blue>■</color>     |= Primary orchestration / n8n      |
+  |= <color:red>■</color>      |= Deep risk analysis               |
+  |= <color:brown>■</color>    |= Multimodal architecture analysis |
+  |= <color:cyan>■</color>     |= Code generation & Vibe Engineering |
+  |= <color:magenta>■</color>  |= Marathon long-running tasks      |
+  |= <color:green>■</color>    |= Progress & velocity              |
+  |= <color:purple>■</color>   |= Digest / summarization           |
+  |= <color:teal>■</color>     |= Metrics collection               |
+  |= <color:gray>■</color>     |= Internal agent reasoning         |
+endlegend
+
+@enduml

@@ -1,0 +1,85 @@
+@startuml
+skinparam shadowing false
+skinparam backgroundColor white
+
+skinparam participant {
+  BackgroundColor #F0F8FF
+  BorderColor #4682B4
+}
+
+actor User #Orange
+
+participant "n8n\n(Orchestrator)" as n8n #FFE4B5
+participant "Planner Agent\n:8301" as planner #87CEEB
+participant "Risks Agent\n:8303" as risks #F08080
+participant "Architecture Intelligence\n:8305" as architecture #DDA0DD
+participant "Code Execution Agent\n:8309" as codeexec #00CED1
+participant "Marathon Agent\n:8308" as marathon #BA55D3
+participant "Progress Agent\n:8302" as progress #90EE90
+participant "Digest Agent\n:8304" as digest #F0E68C
+participant "Metrics Agent\n:8307" as metrics #008080
+
+title n8n → MCP Agents Pipeline (Full System — 9 Agents)
+
+User -> n8n: Trigger (manual / webhook / schedule)
+activate n8n #FFF5E6
+
+n8n -> planner: <b>POST /mcp</b> { method: plan_with_reasoning, params }
+activate planner #D4E9FF
+
+planner -> planner: <i>Multi-step reasoning:</i>\n• Task classification\n• Historical analysis\n• Decomposition with high-level risks\n• Predictive estimation
+
+par Parallel Specialized Agent Calls
+  planner -> risks: <b>MCP call</b> analyze_risks
+  activate risks #FFE4E4
+  risks --> planner: Deep risk analysis + mitigation
+  deactivate risks
+
+else
+  planner -> architecture: <b>MCP call</b> analyze_architecture_deep
+  activate architecture #F3E6FF
+  architecture --> planner: Failure propagation + recommendations
+  deactivate architecture
+
+else
+  planner -> codeexec: <b>MCP call</b> generate_and_test_code
+  activate codeexec #E0FFFF
+  codeexec --> planner: Code + test results + self-correction
+  deactivate codeexec
+
+else
+  planner -> marathon: <b>MCP call</b> run_marathon_task
+  activate marathon #F8E0FF
+  marathon --> planner: Long-running plan + thought signature
+  deactivate marathon
+
+else
+  planner -> progress: <b>MCP call</b> jira_velocity
+  activate progress #E6FFE6
+  progress --> planner: Velocity + completion status
+  deactivate progress
+
+else
+  planner -> digest: <b>MCP call</b> daily_digest
+  activate digest #FFF8E6
+  digest --> planner: Aggregated human-readable summary
+  deactivate digest
+
+else
+  planner -> metrics: <b>MCP call</b> get_metrics
+  activate metrics #E0FFFF
+  metrics --> planner: Record counters & latency
+  deactivate metrics
+end
+
+planner -> planner: <i>Aggregate all responses\n+ full reasoning chain</i>
+
+deactivate planner
+
+planner --> n8n: <b>Structured JSON result</b>\n(with reasoning, risks, code, etc.)
+
+deactivate n8n
+
+n8n --> User: Final report / response
+
+@enduml

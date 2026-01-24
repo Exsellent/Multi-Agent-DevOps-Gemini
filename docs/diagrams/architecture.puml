@@ -1,0 +1,147 @@
+@startuml
+!theme plain
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam componentStyle rectangle
+skinparam padding 3
+
+' Styles for components
+skinparam component {
+  BorderColor #333333
+  FontSize 12
+  ArrowThickness 2
+}
+
+skinparam note {
+  BackgroundColor #FFFACD
+  BorderColor #DAA520
+}
+
+title Multi-Agent DevOps — Architecture (9 Agents, Gemini-Powered)
+
+actor "Developer / User" as dev #87CEEB
+
+cloud "External Services" {
+  component "Gemini LLM\n(text + vision)" as gemini #F08080
+  component "Jira Cloud" as jira #F0E68C
+  component "Prometheus\n(Metrics Storage)" as prometheus #D3D3D3
+}
+
+component "Static Server\n(Nginx / assets)" as static #90EE90
+
+component "n8n\n(Workflow Orchestrator)" as n8n #FFA500
+
+package "MCP Agents (Docker Containers)" {
+  component "Planner Agent\n:8301" as planner #87CEEB
+  component "Progress Agent\n:8302" as progress #90EE90
+  component "Risks Agent\n:8303" as risks #FFB6C1
+  component "Digest Agent\n:8304" as digest #FFFFE0
+  component "Architecture Intelligence\n:8305" as architecture #DDA0DD
+  component "Health Monitor\n:8306" as health #FF6347
+  component "Metrics Agent\n:8307" as metrics #D3D3D3
+  component "Marathon Agent\n:8308" as marathon #BA55D3
+  component "Code Execution Agent\n:8309" as codeexec #00CED1
+}
+
+' Notes
+note right of n8n
+  <b>Central Orchestrator</b>
+  • Starts workflows
+  • Calls agents via HTTP/MCP
+  • Parallel & conditional execution
+end note
+
+note right of planner
+  <b>Strategic Planning</b>
+  • Task decomposition
+  • Predictive estimation
+  • High-level risks
+end note
+
+note right of architecture
+  <b>Multimodal Vision</b>
+  • Deep architecture analysis
+  • Failure propagation simulation
+  • Refactoring recommendations
+end note
+
+note right of codeexec
+  <b>Vibe Engineering</b>
+  • Autonomous code generation
+  • Sandbox testing & debug loops
+  • Self-correction
+end note
+
+note right of marathon
+  <b>Marathon Track</b>
+  • Long-running tasks
+  • Thought Signatures (state)
+  • Resume & self-correction
+end note
+
+note right of health
+  <b>Resilience</b>
+  • Periodic /health checks
+  • Circuit breaker logic
+end note
+
+note right of metrics
+  <b>Observability</b>
+  • Prometheus metrics
+  • Per-agent counters
+end note
+
+' Connections with preserved colors + new ones
+dev -[#0000FF]-> n8n : <color:blue>Manual trigger / Webhook</color>
+
+n8n -[#0000FF]-> planner : <color:blue>MCP call</color>
+n8n -[#228B22]-> progress : <color:green>MCP call</color>
+n8n -[#DC143C]-> risks : <color:red>MCP call</color>
+n8n -[#9932CC]-> digest : <color:purple>MCP call</color>
+n8n -[#8B4513]-> architecture : <color:brown>MCP call (vision)</color>
+n8n -[#808080]-> health : <color:gray>MCP call</color>
+n8n -[#008080]-> metrics : <color:teal>MCP call</color>
+n8n -[#BA55D3]-> marathon : <color:magenta>MCP call (long-running)</color>
+n8n -[#00CED1]-> codeexec : <color:cyan>MCP call (code gen)</color>
+
+' LLM calls
+planner -[#0000FF]-> gemini : <color:blue>LLM reasoning</color>
+progress -[#228B22]-> gemini : <color:green>LLM analysis</color>
+risks -[#DC143C]-> gemini : <color:red>LLM risks</color>
+digest -[#9932CC]-> gemini : <color:purple>LLM summarization</color>
+architecture -[#8B4513]-> gemini : <color:brown>Multimodal vision</color>
+marathon -[#BA55D3]-> gemini : <color:magenta>Long context reasoning</color>
+codeexec -[#00CED1]-> gemini : <color:cyan>Code generation & analysis</color>
+
+' External integrations
+progress -[#228B22]-> jira : <color:green>Read issues/velocity</color>
+planner -[#0000FF]-> jira : <color:blue>Create tasks (optional)</color>
+
+metrics -[#000000]-> prometheus : <color:black>Export metrics</color>
+
+architecture -[#228B22]-> static : <color:green>Fetch diagrams/assets</color>
+
+' Health checks
+health -[#FF4500]down-> planner
+health -[#FF4500]down-> progress
+health -[#FF4500]down-> risks
+health -[#FF4500]down-> digest
+health -[#FF4500]down-> architecture
+health -[#FF4500]down-> metrics
+health -[#FF4500]down-> marathon
+health -[#FF4500]down-> codeexec
+
+legend right
+  |= Color |= Meaning                  |
+  |= <color:blue>■</color>     |= Planning / Primary flow   |
+  |= <color:green>■</color>    |= Progress / Assets         |
+  |= <color:red>■</color>      |= Risk analysis             |
+  |= <color:purple>■</color>   |= Digest / Summarization    |
+  |= <color:brown>■</color>    |= Vision / Architecture     |
+  |= <color:gray>■</color>     |= Health checks             |
+  |= <color:teal>■</color>     |= Metrics                   |
+  |= <color:magenta>■</color>  |= Marathon (long-running)   |
+  |= <color:cyan>■</color>     |= Code Execution (Vibe)     |
+endlegend
+
+@enduml
