@@ -21,7 +21,7 @@ class LLMClient:
         if self.provider == "gemini":
             self.api_key = os.getenv("GEMINI_API_KEY")
             self.base_url = os.getenv("GEMINI_BASE_URL")
-            self.model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+            self.model = os.getenv("GEMINI_MODEL", "gemini-3.0-flash")
 
             if not self.api_key:
                 raise RuntimeError("GEMINI_API_KEY is not set — get it from Google AI Studio")
