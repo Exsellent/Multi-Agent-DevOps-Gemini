@@ -1,8 +1,6 @@
 from agents.risks.agent import RisksAgent
-
 agent = RisksAgent()
 app = agent.app
-
 
 @app.get("/")
 async def root():
