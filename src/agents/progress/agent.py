@@ -27,6 +27,21 @@ def log_method(func):
 
 
 class ProgressAgent(MCPAgent):
+    """
+    Progress Tracking and Velocity Analysis Agent
+
+    Capabilities:
+    1. Commit-based progress analysis (LLM-powered)
+    2. Jira velocity tracking (deterministic calculations)
+    3. Sprint velocity and completion rate metrics
+
+    This agent demonstrates both:
+    - LLM-enhanced analysis (analyze_progress)
+    - Pure deterministic logic (jira_velocity)
+
+    Proving the architecture works with AND without AI.
+    """
+
     def __init__(self):
         super().__init__("Progress")
         self.llm = LLMClient()
@@ -46,102 +61,131 @@ class ProgressAgent(MCPAgent):
         ]
         return any(indicator in text for indicator in indicators)
 
+    def _next_step(self, reasoning: List[ReasoningStep], description: str,
+                   input_data: Optional[Dict] = None, output_data: Optional[Dict] = None):
+        """Helper to add sequential reasoning steps"""
+        reasoning.append(ReasoningStep(
+            step_number=len(reasoning) + 1,
+            description=description,
+            input_data=input_data or {},
+            output_data=output_data or {}
+        ))
+
     @log_method
     @metric_counter("progress")
     async def analyze_progress(self, commits: List[str]):
-        """Analyze progress from commits"""
+        """
+        Analyze progress from commit messages using LLM
+
+        This demonstrates LLM-powered analysis with proper fallback
+        """
         reasoning: List[ReasoningStep] = []
+        fallback_used = False
 
-        reasoning.append(ReasoningStep(
-            step_number=1,
-            description="Received commits for progress analysis",
-            input_data={"commits_count": len(commits)}
-        ))
+        # Step 1: Request received
+        self._next_step(reasoning, "Received commits for progress analysis",
+                        input_data={"commits_count": len(commits)})
 
+        # Step 2: Generate prompt
         prompt = (
                 "You are a progress tracking agent.\n"
                 "Analyze these commits and summarize achievements and velocity:\n" +
                 "\n".join(f"- {c}" for c in commits) +
-                "\n\nBe concise and positive."
+                "\n\nProvide a concise, positive summary of progress made."
         )
 
-        reasoning.append(ReasoningStep(
-            step_number=2,
-            description="Generated prompt for progress summary"
-        ))
+        self._next_step(reasoning, "Generated prompt for progress summary",
+                        output_data={"prompt_length": len(prompt)})
 
         try:
+            # Attempt LLM analysis
             summary = await self.llm.chat(prompt)
 
+            # Check if LLM response is valid
             if self._is_invalid_response(summary):
-                summary = "Progress analysis unavailable — fallback to basic count."
-                reasoning.append(ReasoningStep(
-                    step_number=4,
-                    description="LLM stub/error detected — using fallback summary",
-                    output_data={"fallback_used": True}
-                ))
+                fallback_used = True
+                summary = (
+                    f"Progress analysis unavailable. "
+                    f"Processed {len(commits)} commit(s). "
+                    f"Manual review recommended for detailed insights."
+                )
+                logger.warning("Progress Agent using fallback summary",
+                               extra={"commits_count": len(commits)})
 
-            reasoning.append(ReasoningStep(
-                step_number=3,
-                description="Received progress summary from LLM",
-                output_data={"summary_length": len(summary)}
-            ))
+            # Step 3: Analysis completed
+            self._next_step(reasoning, "Received progress summary from LLM",
+                            output_data={
+                                "summary_length": len(summary),
+                                "fallback_used": fallback_used
+                            })
 
-            logger.info("Progress analysis completed", extra={"commits_count": len(commits)})
+            # Step 4 (optional): Fallback annotation
+            if fallback_used:
+                self._next_step(reasoning, "Fallback summary was used due to LLM unavailability",
+                                output_data={"commits_analyzed": len(commits)})
+
+            logger.info("Progress analysis completed",
+                        extra={"commits_count": len(commits), "fallback": fallback_used})
 
             return {
                 "commits_count": len(commits),
                 "commits": commits,
                 "summary": summary,
+                "fallback_used": fallback_used,
                 "reasoning": reasoning
             }
 
         except Exception as e:
             logger.error("Progress analysis failed", extra={"error": str(e)})
-            reasoning.append(ReasoningStep(
-                step_number=4,
-                description="Progress analysis failed",
-                output_data={"error": str(e)}
-            ))
+
+            # Use fallback even on exception
+            self._next_step(reasoning, "Progress analysis failed with exception — using fallback",
+                            output_data={"error": str(e), "fallback_used": True})
+
+            self._next_step(reasoning, "Fallback summary generated",
+                            output_data={"commits_count": len(commits)})
+
             return {
                 "commits_count": len(commits),
-                "error": str(e),
+                "commits": commits,
+                "summary": f"Progress analysis failed. Processed {len(commits)} commit(s). Manual review needed.",
+                "fallback_used": True,
                 "reasoning": reasoning,
-                "fallback": "Manual review needed"
+                "error": str(e)
             }
 
     @log_method
     @metric_counter("progress")
     async def jira_velocity(self, project_key: Optional[str] = None):
-        """Analyze project velocity from Jira issues"""
+        """
+        Analyze project velocity from Jira issues
+
+        This is a DETERMINISTIC agent - no LLM required.
+        Demonstrates that multi-agent architecture works for both AI and traditional logic.
+        """
         reasoning: List[ReasoningStep] = []
 
-        reasoning.append(ReasoningStep(
-            step_number=1,
-            description="Jira velocity analysis requested",
-            input_data={"project_key": project_key or self.jira.project_key}
-        ))
+        # Step 1: Request received
+        self._next_step(reasoning, "Jira velocity analysis requested",
+                        input_data={"project_key": project_key or self.jira.project_key})
 
         try:
-            # Get dictionary with 'issues' list and 'mode' from JiraClient
+            # Step 2: Fetch from Jira (with automatic fallback to mocks)
             result = await self.jira.get_project_issues()
+
             issues = result.get("issues", [])
             jira_mode = result.get("mode", "unknown")
 
-            reasoning.append(ReasoningStep(
-                step_number=2,
-                description="Retrieved issues from Jira",
-                output_data={
-                    "issues_count": len(issues),
-                    "jira_mode": jira_mode
-                }
-            ))
+            self._next_step(reasoning, "Retrieved issues from Jira",
+                            output_data={
+                                "issues_count": len(issues),
+                                "jira_mode": jira_mode
+                            })
 
+            # Early exit if no data
             if not issues:
-                reasoning.append(ReasoningStep(
-                    step_number=3,
-                    description="No issues found — returning fallback data"
-                ))
+                self._next_step(reasoning, "No issues found — returning zero metrics")
+
                 return {
                     "project": project_key or self.jira.project_key,
                     "total_issues": 0,
@@ -151,7 +195,7 @@ class ProgressAgent(MCPAgent):
                     "reasoning": reasoning
                 }
 
-            # Count statuses
+            # Step 3: Calculate velocity metrics (deterministic logic)
             status_counts: Dict[str, int] = {}
             for issue in issues:
                 status = issue["fields"]["status"]["name"]
@@ -160,15 +204,31 @@ class ProgressAgent(MCPAgent):
             total = len(issues)
             done = sum(v for k, v in status_counts.items() if k.lower() in ["done", "closed"])
             completion_rate = round((done / total * 100) if total > 0 else 0, 1)
-            velocity_status = "on_track" if completion_rate > 50 else "at_risk"
 
-            reasoning.append(ReasoningStep(
-                step_number=3,
-                description="Calculated project velocity",
-                output_data={"completion_rate": completion_rate}
-            ))
+            # Velocity status classification
+            if completion_rate >= 75:
+                velocity_status = "excellent"
+            elif completion_rate >= 50:
+                velocity_status = "on_track"
+            elif completion_rate >= 25:
+                velocity_status = "at_risk"
+            else:
+                velocity_status = "critical"
 
-            logger.info("Jira velocity calculated", extra={"completion_rate": completion_rate})
+            self._next_step(reasoning, "Calculated project velocity",
+                            output_data={
+                                "completion_rate": completion_rate,
+                                "velocity_status": velocity_status,
+                                "total_issues": total,
+                                "done_issues": done
+                            })
+
+            logger.info("Jira velocity calculated",
+                        extra={
+                            "completion_rate": completion_rate,
+                            "jira_mode": jira_mode,
+                            "project": project_key or self.jira.project_key
+                        })
 
             return {
                 "project": project_key or self.jira.project_key,
@@ -182,12 +242,13 @@ class ProgressAgent(MCPAgent):
 
         except Exception as e:
             logger.error("Jira velocity failed", extra={"error": str(e)})
-            reasoning.append(ReasoningStep(
-                step_number=4,
-                description="Jira velocity failed",
-                output_data={"error": str(e)}
-            ))
+
+            self._next_step(reasoning, "Jira velocity failed with exception",
+                            output_data={"error": str(e)})
+
             return {
+                "project": project_key or self.jira.project_key,
                 "error": str(e),
-                "reasoning": reasoning
+                "reasoning": reasoning,
+                "fallback": "Manual Jira review required"
             }
