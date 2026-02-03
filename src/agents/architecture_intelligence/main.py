@@ -1,4 +1,4 @@
-from src.agents.image.agent import ArchitectureIntelligenceAgent
+from src.agents.architecture_intelligence.agent import ArchitectureIntelligenceAgent
 
 agent = ArchitectureIntelligenceAgent()
 app = agent.app
@@ -12,3 +12,9 @@ async def root():
         "available_tools": list(agent.tools.keys()),
         "docs": "/docs"
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(agent.app, host="0.0.0.0", port=8305)
