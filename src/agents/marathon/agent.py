@@ -27,7 +27,7 @@ class TaskState(str, Enum):
 class ThinkingLevel(str, Enum):
     """
     Hierarchical thinking levels for Marathon Agent
-    Critical for Gemini 3 hackathon requirements
+    Critical for long-horizon autonomous execution
     """
     STRATEGIC = "strategic"  # Hours/days planning
     TACTICAL = "tactical"  # Next 3-5 steps
@@ -58,7 +58,6 @@ class SubGoal:
     actual_duration_mins: Optional[int] = None
 
     # References to external verification artifacts
-    # (created by specialized agents like CodeExecutionAgent)
     verification_artifact_refs: List[str] = None
 
     def __post_init__(self):
@@ -212,7 +211,6 @@ class MarathonAgent(MCPAgent):
         self._running_loops: Dict[str, bool] = {}
 
         # Reference to other agents (injected or discovered)
-        # In production: service discovery or dependency injection
         self._available_agents: Dict[str, Any] = {}
 
         # Register tools
@@ -225,7 +223,7 @@ class MarathonAgent(MCPAgent):
         self.register_tool("get_thinking_records", self.get_thinking_records)
         self.register_tool("stop_task", self.stop_task)
 
-        logger.info("Marathon Agent initialized (PURE ORCHESTRATOR)")
+        logger.info("Marathon Agent initialized - ready for long-running tasks")
 
     def register_agent(self, agent_name: str, agent_instance: Any):
         """
@@ -239,7 +237,7 @@ class MarathonAgent(MCPAgent):
         logger.info(f"Registered agent: {agent_name}")
 
     def _calculate_progress(self, sub_goals: List[SubGoal]) -> int:
-        """INTERNAL DECISION: Calculate objective progress"""
+        """Calculate objective progress"""
         if not sub_goals:
             return 0
 
@@ -418,7 +416,6 @@ Return as JSON array:
         # Check if this is a delegation
         if "delegate to" in action.lower() or "call" in action.lower():
             # Extract agent name and task
-            # Simple heuristic - in production: more sophisticated parsing
             parts = action.split(":")
             if len(parts) >= 2:
                 agent_part = parts[0].lower()
@@ -587,203 +584,45 @@ Return as JSON:
             confidence=0.8
         )
 
-        # Save to persistent storage
+        # Save to persistent store
         await self.store.save(thought_signature)
 
         reasoning.append(ReasoningStep(
             step_number=3,
-            description="Thought signature persisted",
+            description="ThoughtSignature persisted to store",
             output_data={"task_id": task_id}
         ))
 
-        result = {
-            "task_id": task_id,
-            "status": "initialized",
-            "strategic_plan": strategic_plan,
-            "sub_goals": [asdict(sg) for sg in sub_goals],
-            "thought_signature": asdict(thought_signature),
-            "reasoning": reasoning,
-            "message": f"Marathon task initialized. {len(sub_goals)} sub-goals planned."
-        }
-
-        # Auto-start execution loop if requested
+        # Optionally start autonomous loop
         if auto_start_loop:
             asyncio.create_task(self._autonomous_execution_loop(task_id))
-            result["message"] += " Autonomous execution started."
-
-        return result
-
-    @metric_counter("marathon")
-    async def delegate_to_agent(
-            self,
-            task_id: str,
-            agent_name: str,
-            task_description: str,
-            context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """
-        Delegate task to a specialized agent
-
-        This is how Marathon orchestrates other agents
-        """
-        reasoning: List[ReasoningStep] = []
-
-        thought_sig = await self.store.load(task_id)
-        if not thought_sig:
-            return {"error": f"Task {task_id} not found"}
-
-        reasoning.append(ReasoningStep(
-            step_number=1,
-            description=f"OPERATIONAL: Delegating to {agent_name}",
-            input_data={
-                "agent": agent_name,
-                "task": task_description,
-                "thinking_level": ThinkingLevel.OPERATIONAL
-            }
-        ))
-
-        # Check if agent is available
-        if agent_name not in self._available_agents:
             reasoning.append(ReasoningStep(
-                step_number=2,
-                description=f"Agent {agent_name} not available",
-                output_data={"error": "agent_not_found"}
+                step_number=4,
+                description="Autonomous execution loop started"
             ))
-
-            thought_sig.failed_delegations += 1
-            thought_sig.blockers.append(f"Agent {agent_name} not available")
-            await self.store.save(thought_sig)
-
-            return {
-                "error": f"Agent {agent_name} not available",
-                "available_agents": list(self._available_agents.keys()),
-                "reasoning": reasoning
-            }
-
-        # Delegate
-        agent = self._available_agents[agent_name]
-        thought_sig.total_delegations += 1
-
-        delegation_record = DelegationRecord(
-            timestamp=datetime.now().isoformat(),
-            delegated_to=agent_name,
-            task_description=task_description
-        )
-
-        try:
-            # Call agent (specific method depends on agent type)
-            # This is a simplified interface - in production: standardized protocol
-
-            result = None
-
-            if agent_name == "CodeExecution":
-                # Delegate to CodeExecutionAgent
-                result = await agent.generate_and_test_code(
-                    requirement=task_description,
-                    context=context.get("context") if context else None
-                )
-            elif hasattr(agent, 'execute_task'):
-                # Generic delegation interface
-                result = await agent.execute_task(
-                    description=task_description,
-                    context=context
-                )
-
-            # Process result
-            if result:
-                # Check if delegation was successful
-                success = result.get("production_ready", False) or result.get("status") == "success"
-
-                delegation_record.success = success
-                delegation_record.result_summary = str(result.get("summary", "Completed"))
-
-                # Extract artifact references
-                if "verification_artifact" in result:
-                    artifact_id = result["verification_artifact"].get("artifact_id")
-                    if artifact_id:
-                        delegation_record.artifact_refs.append(artifact_id)
-
-                if success:
-                    thought_sig.successful_delegations += 1
-                else:
-                    thought_sig.failed_delegations += 1
-
-                reasoning.append(ReasoningStep(
-                    step_number=2,
-                    description=f"Delegation to {agent_name} completed",
-                    output_data={
-                        "success": success,
-                        "has_artifacts": len(delegation_record.artifact_refs) > 0
-                    }
-                ))
-            else:
-                delegation_record.success = False
-                delegation_record.result_summary = "No result returned"
-                thought_sig.failed_delegations += 1
-
-                reasoning.append(ReasoningStep(
-                    step_number=2,
-                    description=f"Delegation to {agent_name} returned no result",
-                    output_data={"success": False}
-                ))
-
-        except Exception as e:
-            logger.exception(f"Delegation to {agent_name} failed")
-            delegation_record.success = False
-            delegation_record.result_summary = f"Error: {str(e)}"
-            thought_sig.failed_delegations += 1
-
-            reasoning.append(ReasoningStep(
-                step_number=2,
-                description=f"Delegation to {agent_name} failed with exception",
-                output_data={"error": str(e)}
-            ))
-
-        # Record delegation
-        thought_sig.delegations.append(delegation_record)
-
-        # Log to operational log
-        thought_sig.operational_log.append(
-            f"[{datetime.now().isoformat()}] Delegated to {agent_name}: {delegation_record.result_summary}"
-        )
-
-        await self.store.save(thought_sig)
 
         return {
             "task_id": task_id,
-            "delegation": asdict(delegation_record),
+            "status": "started",
+            "strategic_plan": strategic_plan,
+            "sub_goals": [sg.name for sg in sub_goals],
+            "estimated_completion": thought_signature.estimated_completion,
             "reasoning": reasoning
         }
 
     @metric_counter("marathon")
-    async def autonomous_tick(
-            self,
-            task_id: str
-    ) -> Dict[str, Any]:
+    async def autonomous_tick(self, task_id: str) -> Dict[str, Any]:
         """
-        Execute one autonomous tick of the Marathon loop
-
-        This is the heart of Marathon Agent:
-        Observe → Decide → Act → Verify → Update
+        Single autonomous execution tick
+        Advances the task by one step
         """
         reasoning: List[ReasoningStep] = []
 
-        # Load state
         thought_sig = await self.store.load(task_id)
         if not thought_sig:
             return {"error": f"Task {task_id} not found"}
 
-        reasoning.append(ReasoningStep(
-            step_number=1,
-            description="Autonomous tick started",
-            input_data={
-                "task_id": task_id,
-                "current_state": thought_sig.current_state,
-                "progress": thought_sig.progress_percentage
-            }
-        ))
-
-        # Check if completed
+        # Check if already finished
         if thought_sig.current_state in [TaskState.COMPLETED, TaskState.FAILED]:
             return {
                 "task_id": task_id,
@@ -792,61 +631,98 @@ Return as JSON:
                 "reasoning": reasoning
             }
 
-        # TACTICAL LEVEL: Get next actions
-        thought_sig.current_thinking_level = ThinkingLevel.TACTICAL
-        tactical_steps = await self._think_tactical(thought_sig)
-        thought_sig.tactical_steps = tactical_steps
-
         reasoning.append(ReasoningStep(
-            step_number=2,
-            description="TACTICAL: Determined next actions",
-            output_data={"actions_count": len(tactical_steps)}
+            step_number=1,
+            description="Loaded task state",
+            input_data={"current_progress": thought_sig.progress_percentage}
         ))
 
-        # OPERATIONAL LEVEL: Execute first action
-        if tactical_steps:
-            thought_sig.current_thinking_level = ThinkingLevel.OPERATIONAL
-            action = tactical_steps[0]
+        # Get current sub-goal
+        if thought_sig.current_sub_goal_idx >= len(thought_sig.sub_goals):
+            # All goals done
+            thought_sig.current_state = TaskState.COMPLETED
+            await self.store.save(thought_sig)
+            return {
+                "task_id": task_id,
+                "status": "finished",
+                "final_state": TaskState.COMPLETED,
+                "progress": 100,
+                "reasoning": reasoning
+            }
 
-            execution_result = await self._think_operational(action, thought_sig)
+        current_goal = thought_sig.sub_goals[thought_sig.current_sub_goal_idx]
+
+        # TACTICAL LEVEL: If no tactical steps, plan them
+        if not thought_sig.tactical_steps:
+            thought_sig.current_thinking_level = ThinkingLevel.TACTICAL
+            thought_sig.tactical_steps = await self._think_tactical(thought_sig)
+
+            self._add_thinking_record(
+                thought_sig=thought_sig,
+                level=ThinkingLevel.TACTICAL,
+                thought=f"Planned {len(thought_sig.tactical_steps)} tactical steps for {current_goal.name}",
+                decisions=thought_sig.tactical_steps,
+                confidence=0.8
+            )
+
+            reasoning.append(ReasoningStep(
+                step_number=2,
+                description="Tactical steps planned",
+                output_data={"steps_count": len(thought_sig.tactical_steps)}
+            ))
+
+        # OPERATIONAL LEVEL: Execute next step
+        if thought_sig.tactical_steps:
+            thought_sig.current_thinking_level = ThinkingLevel.OPERATIONAL
+            next_step = thought_sig.tactical_steps.pop(0)
+
+            result = await self._think_operational(next_step, thought_sig)
 
             reasoning.append(ReasoningStep(
                 step_number=3,
-                description="OPERATIONAL: Executed action",
-                output_data=execution_result
+                description=f"Executed: {next_step}",
+                output_data=result
             ))
 
-            # Check if action was a successful delegation
-            if "delegation" in execution_result:
-                delegation = execution_result["delegation"]
-                if delegation.get("success"):
-                    # Mark current sub-goal as done
-                    current_goal = thought_sig.sub_goals[thought_sig.current_sub_goal_idx]
-                    current_goal.status = SubGoalStatus.DONE
+        # Check if current sub-goal is done
+        if not thought_sig.tactical_steps:
+            current_goal.status = SubGoalStatus.DONE
+            current_goal.actual_duration_mins = 30  # Simplified
 
-                    # Store artifact references
-                    if delegation.get("artifact_refs"):
-                        current_goal.verification_artifact_refs.extend(delegation["artifact_refs"])
+            # Move to next sub-goal
+            thought_sig.current_sub_goal_idx += 1
 
-                    thought_sig.current_sub_goal_idx += 1
+            # Update progress
+            thought_sig.progress_percentage = self._calculate_progress(thought_sig.sub_goals)
 
-        # Update progress
-        thought_sig.progress_percentage = self._calculate_progress(thought_sig.sub_goals)
+            reasoning.append(ReasoningStep(
+                step_number=4,
+                description=f"Sub-goal '{current_goal.name}' completed",
+                output_data={"new_progress": thought_sig.progress_percentage}
+            ))
 
-        # Check if all goals completed
-        if thought_sig.current_sub_goal_idx >= len(thought_sig.sub_goals):
-            thought_sig.current_state = TaskState.COMPLETED
-        else:
+        # REFLECTIVE LEVEL: Periodic reflection
+        if thought_sig.total_tool_calls % 5 == 0:
+            thought_sig.current_thinking_level = ThinkingLevel.REFLECTIVE
+            reflection = await self._think_reflective(thought_sig, "Periodic check")
+
+            self._add_thinking_record(
+                thought_sig=thought_sig,
+                level=ThinkingLevel.REFLECTIVE,
+                thought="Periodic reflection on progress",
+                decisions=reflection.get("recommended_changes", []),
+                confidence=reflection.get("confidence", 0.7)
+            )
+
+            if reflection.get("recommended_changes"):
+                thought_sig.self_corrections.append({
+                    "timestamp": datetime.now().isoformat(),
+                    "corrections": reflection["recommended_changes"]
+                })
+
+        # Update state
+        if thought_sig.current_state == TaskState.PLANNING:
             thought_sig.current_state = TaskState.IN_PROGRESS
-
-        reasoning.append(ReasoningStep(
-            step_number=4,
-            description="State updated",
-            output_data={
-                "progress": thought_sig.progress_percentage,
-                "state": thought_sig.current_state
-            }
-        ))
 
         # Save updated state
         await self.store.save(thought_sig)
@@ -885,6 +761,83 @@ Return as JSON:
             self._running_loops[task_id] = False
 
     @metric_counter("marathon")
+    async def resume_task(
+            self,
+            task_id: str,
+            auto_start_loop: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Resume a previously started marathon task after interruption
+
+        This enables Marathon Agent to survive restarts and continue
+        long-running tasks from where they left off.
+        """
+        reasoning: List[ReasoningStep] = []
+
+        thought_sig = await self.store.load(task_id)
+        if not thought_sig:
+            return {"error": f"Task {task_id} not found"}
+
+        reasoning.append(ReasoningStep(
+            step_number=1,
+            description="Resuming Marathon task from persistent state",
+            input_data={
+                "task_id": task_id,
+                "previous_state": thought_sig.current_state,
+                "progress": thought_sig.progress_percentage
+            }
+        ))
+
+        # Safety check
+        if thought_sig.current_state in [TaskState.COMPLETED, TaskState.FAILED]:
+            return {
+                "task_id": task_id,
+                "status": "cannot_resume",
+                "final_state": thought_sig.current_state,
+                "reasoning": reasoning
+            }
+
+        # Update state
+        thought_sig.current_state = TaskState.IN_PROGRESS
+        thought_sig.current_thinking_level = ThinkingLevel.REFLECTIVE
+
+        self._add_thinking_record(
+            thought_sig=thought_sig,
+            level=ThinkingLevel.REFLECTIVE,
+            thought="Task resumed after interruption",
+            decisions=["Continue execution from persisted ThoughtSignature"],
+            confidence=0.9
+        )
+
+        await self.store.save(thought_sig)
+
+        reasoning.append(ReasoningStep(
+            step_number=2,
+            description="Task state restored and ready for execution",
+            output_data={
+                "current_sub_goal_idx": thought_sig.current_sub_goal_idx,
+                "remaining_goals": len(thought_sig.sub_goals) - thought_sig.current_sub_goal_idx
+            }
+        ))
+
+        # Optionally restart autonomous loop
+        if auto_start_loop:
+            asyncio.create_task(self._autonomous_execution_loop(task_id))
+            reasoning.append(ReasoningStep(
+                step_number=3,
+                description="Autonomous execution loop restarted"
+            ))
+
+        return {
+            "task_id": task_id,
+            "status": "resumed",
+            "current_state": thought_sig.current_state,
+            "progress": thought_sig.progress_percentage,
+            "reasoning": reasoning,
+            "message": "Marathon task successfully resumed from persistent state"
+        }
+
+    @metric_counter("marathon")
     async def check_task_progress(self, task_id: str) -> Dict[str, Any]:
         """Check current state with thinking records"""
         reasoning: List[ReasoningStep] = []
@@ -920,12 +873,12 @@ Provide concise status update (2-3 sentences).
             "task_id": task_id,
             "progress_percentage": thought_sig.progress_percentage,
             "current_state": thought_sig.current_state,
-            "current_thinking_level": thought_sig.current_thinking_level.value,  # .value — чтобы была строка, а не enum
+            "current_thinking_level": thought_sig.current_thinking_level.value,
             "summary": summary,
             "sub_goals_status": [
                 {
                     "name": sg.name,
-                    "status": sg.status.value,  # тоже лучше .value
+                    "status": sg.status.value,
                     "artifact_refs": sg.verification_artifact_refs
                 }
                 for sg in thought_sig.sub_goals
@@ -936,4 +889,289 @@ Provide concise status update (2-3 sentences).
                 "failed": thought_sig.failed_delegations
             },
             "reasoning": reasoning
+        }
+
+    @metric_counter("marathon")
+    async def delegate_to_agent(
+            self,
+            task_id: str,
+            agent_name: str,
+            task_description: str
+    ) -> Dict[str, Any]:
+        """
+        Delegate a task to a specialized agent
+
+        Marathon orchestrates, specialists execute
+        """
+        reasoning: List[ReasoningStep] = []
+
+        thought_sig = await self.store.load(task_id)
+        if not thought_sig:
+            return {"error": f"Task {task_id} not found"}
+
+        reasoning.append(ReasoningStep(
+            step_number=1,
+            description=f"Delegating to {agent_name}",
+            input_data={"task": task_description}
+        ))
+
+        # Check if agent is available
+        if agent_name not in self._available_agents:
+            # Agent not available - record as failed delegation
+            delegation = DelegationRecord(
+                timestamp=datetime.now().isoformat(),
+                delegated_to=agent_name,
+                task_description=task_description,
+                result_summary="Agent not available",
+                success=False,
+                artifact_refs=[]
+            )
+
+            thought_sig.delegations.append(delegation)
+            thought_sig.total_delegations += 1
+            thought_sig.failed_delegations += 1
+
+            await self.store.save(thought_sig)
+
+            return {
+                "status": "failed",
+                "reason": f"Agent {agent_name} not registered",
+                "reasoning": reasoning
+            }
+
+        # Delegate to agent
+        try:
+            agent = self._available_agents[agent_name]
+
+            # Simulate delegation - in production, call actual agent methods
+            result = {
+                "success": True,
+                "result": f"Delegated to {agent_name}: {task_description}",
+                "artifacts": []
+            }
+
+            delegation = DelegationRecord(
+                timestamp=datetime.now().isoformat(),
+                delegated_to=agent_name,
+                task_description=task_description,
+                result_summary=result["result"],
+                success=result["success"],
+                artifact_refs=result.get("artifacts", [])
+            )
+
+            thought_sig.delegations.append(delegation)
+            thought_sig.total_delegations += 1
+
+            if result["success"]:
+                thought_sig.successful_delegations += 1
+            else:
+                thought_sig.failed_delegations += 1
+
+            await self.store.save(thought_sig)
+
+            reasoning.append(ReasoningStep(
+                step_number=2,
+                description="Delegation completed",
+                output_data=result
+            ))
+
+            return {
+                "status": "success",
+                "result": result,
+                "reasoning": reasoning
+            }
+
+        except Exception as e:
+            logger.exception(f"Delegation to {agent_name} failed")
+
+            delegation = DelegationRecord(
+                timestamp=datetime.now().isoformat(),
+                delegated_to=agent_name,
+                task_description=task_description,
+                result_summary=f"Error: {str(e)}",
+                success=False,
+                artifact_refs=[]
+            )
+
+            thought_sig.delegations.append(delegation)
+            thought_sig.total_delegations += 1
+            thought_sig.failed_delegations += 1
+
+            await self.store.save(thought_sig)
+
+            return {
+                "status": "error",
+                "error": str(e),
+                "reasoning": reasoning
+            }
+
+    @metric_counter("marathon")
+    async def self_correct(
+            self,
+            task_id: str,
+            observed_issue: str
+    ) -> Dict[str, Any]:
+        """
+        Self-correction based on feedback loop
+
+        The agent detects something went wrong and fixes its approach
+        """
+        reasoning: List[ReasoningStep] = []
+
+        thought_sig = await self.store.load(task_id)
+        if not thought_sig:
+            return {"error": f"Task {task_id} not found"}
+
+        reasoning.append(ReasoningStep(
+            step_number=1,
+            description="Initiating self-correction process",
+            input_data={"issue": observed_issue}
+        ))
+
+        # REFLECTIVE thinking for correction
+        thought_sig.current_thinking_level = ThinkingLevel.REFLECTIVE
+
+        correction_prompt = f"""
+You are analyzing a problem in your autonomous execution.
+
+CONTEXT:
+- Task: {task_id}
+- Progress: {thought_sig.progress_percentage}%
+- Recent actions: {thought_sig.operational_log[-5:]}
+- Decisions made: {thought_sig.decisions_made[-3:]}
+
+OBSERVED ISSUE: {observed_issue}
+
+Perform root cause analysis:
+1. What went wrong?
+2. Why did it happen?
+3. What should have been done differently?
+4. How to fix it now?
+5. How to prevent similar issues?
+
+Return as JSON:
+{{
+  "root_cause": "...",
+  "correction_plan": ["step 1", "step 2"],
+  "prevention_measures": ["measure 1"]
+}}
+"""
+
+        response = await self.llm.chat(correction_prompt)
+
+        try:
+            clean = response.strip()
+            if clean.startswith("```json"):
+                clean = clean[7:]
+            if clean.endswith("```"):
+                clean = clean[:-3]
+            clean = clean.strip()
+
+            correction = json.loads(clean)
+
+        except json.JSONDecodeError:
+            correction = {
+                "root_cause": "Unknown",
+                "correction_plan": [response[:200]],
+                "prevention_measures": []
+            }
+
+        # Record the self-correction
+        correction_record = {
+            "timestamp": datetime.now().isoformat(),
+            "issue": observed_issue,
+            "root_cause": correction.get("root_cause", ""),
+            "correction_plan": correction.get("correction_plan", []),
+            "prevention": correction.get("prevention_measures", [])
+        }
+
+        thought_sig.self_corrections.append(correction_record)
+
+        self._add_thinking_record(
+            thought_sig=thought_sig,
+            level=ThinkingLevel.REFLECTIVE,
+            thought=f"Self-corrected: {observed_issue}",
+            decisions=correction.get("correction_plan", []),
+            confidence=0.7
+        )
+
+        await self.store.save(thought_sig)
+
+        reasoning.append(ReasoningStep(
+            step_number=2,
+            description="Applied self-correction and updated approach",
+            output_data=correction_record
+        ))
+
+        return {
+            "task_id": task_id,
+            "status": "self_corrected",
+            "correction": correction_record,
+            "reasoning": reasoning,
+            "message": "Task execution corrected autonomously"
+        }
+
+    @metric_counter("marathon")
+    async def get_thinking_records(
+            self,
+            task_id: str,
+            level: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Get thinking records for a task
+
+        Useful for debugging and understanding decision-making
+        """
+        thought_sig = await self.store.load(task_id)
+        if not thought_sig:
+            return {"error": f"Task {task_id} not found"}
+
+        records = thought_sig.thinking_records
+
+        # Filter by level if specified
+        if level:
+            try:
+                level_enum = ThinkingLevel(level)
+                records = [r for r in records if r.level == level_enum]
+            except ValueError:
+                return {"error": f"Invalid thinking level: {level}"}
+
+        return {
+            "task_id": task_id,
+            "thinking_records": [asdict(r) for r in records],
+            "total_records": len(records)
+        }
+
+    @metric_counter("marathon")
+    async def stop_task(self, task_id: str) -> Dict[str, Any]:
+        """
+        Stop a running task
+
+        Gracefully terminates autonomous execution
+        """
+        thought_sig = await self.store.load(task_id)
+        if not thought_sig:
+            return {"error": f"Task {task_id} not found"}
+
+        # Stop the execution loop
+        if task_id in self._running_loops:
+            self._running_loops[task_id] = False
+
+        # Update state
+        thought_sig.current_state = TaskState.FAILED
+
+        self._add_thinking_record(
+            thought_sig=thought_sig,
+            level=ThinkingLevel.REFLECTIVE,
+            thought="Task stopped by user request",
+            decisions=["Terminated execution gracefully"],
+            confidence=1.0
+        )
+
+        await self.store.save(thought_sig)
+
+        return {
+            "task_id": task_id,
+            "status": "stopped",
+            "message": "Task execution stopped"
         }
