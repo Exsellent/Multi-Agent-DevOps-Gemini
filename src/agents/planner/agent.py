@@ -3,6 +3,7 @@ import logging
 import re
 import statistics
 from dataclasses import dataclass, asdict
+from functools import wraps
 from typing import List, Optional, Dict, Any
 
 from shared.jira import JiraClient
@@ -38,8 +39,9 @@ class PredictiveEstimate:
 
 
 def log_method(func):
-    """Decorator for logging method calls"""
+    """Decorator for logging method calls with signature preservation"""
 
+    @wraps(func)  # Preserves original function metadata for MCP inspection
     async def wrapper(self, *args, **kwargs):
         logger.info(f"{func.__name__} called")
         try:
@@ -61,8 +63,13 @@ class PlannerAgent(MCPAgent):
     1. Multi-Step Reasoning: Chain-of-thought planning with explicit decision trees
     2. Predictive Estimation: Data-driven estimation based on historical patterns
     3. Risk-Aware Planning: Proactive risk identification and mitigation strategies
+    4. Clean Output: No duplication, normalized reasoning for MCP/UI compatibility
 
-    Proper sequential reasoning, fallback transparency, Jira composition
+    Improvements in this version:
+    - Fixed Pydantic model handling (step.dict() instead of asdict())
+    - Removed data duplication in responses
+    - Clean reasoning output (no duplicate output/output_data)
+    - Enhanced error handling and fallback transparency
     """
 
     def __init__(self):
@@ -92,6 +99,28 @@ class PlannerAgent(MCPAgent):
             HistoricalTask("integration", 10, 15, "high", ["api_changes"], 3, False),
         ]
 
+    def _normalize_reasoning(self, reasoning: List[ReasoningStep]) -> List[Dict[str, Any]]:
+        """
+        Normalize reasoning for MCP/UI compatibility
+
+        Uses step.dict() for Pydantic BaseModel (not asdict)
+        Removes duplication by using pop() instead of copying
+        """
+        normalized = []
+        for step in reasoning:
+            # Use .dict() for Pydantic BaseModel (not asdict for dataclass)
+            d = step.dict()
+
+            # Replace output_data with output (removes duplication)
+            d["output"] = d.pop("output_data", {})
+
+            # Ensure agent field is present
+            if not d.get("agent"):
+                d["agent"] = "Planner"
+
+            normalized.append(d)
+        return normalized
+
     def _next_step(self, reasoning: List[ReasoningStep], description: str,
                    input_data: Optional[Dict] = None, output_data: Optional[Dict] = None):
         """
@@ -116,16 +145,22 @@ class PlannerAgent(MCPAgent):
         """
         Standard planning - delegates to plan_with_reasoning for enhanced capabilities
         """
-        return await self.plan_with_reasoning(description)
+        return await self.plan_with_reasoning(description=description)
 
     @log_method
     @metric_counter("planner")
-    async def plan_with_reasoning(self, description: str, context: Optional[str] = None) -> Dict[str, Any]:
+    async def plan_with_reasoning(
+            self,
+            description: str,
+            context: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Enhanced planning with explicit multi-step reasoning chain
 
         This is a SELF-CONTAINED reasoning process with proper sequential steps.
         All fallback scenarios are explicitly tracked in reasoning.
+
+        Returns clean output without duplication
         """
         reasoning: List[ReasoningStep] = []
         fallback_used = False
@@ -204,15 +239,15 @@ TASK: {description}
 CLASSIFICATION: Type={classification.get('task_type')}, Complexity={classification.get('complexity')}
 
 Return a numbered list of specific, actionable subtasks.
+Each subtask should be clear and concise.
 """
 
         subtasks = []
         decomposition_fallback = False
-        decomposition = ""
 
         try:
-            decomposition = await self.llm.chat(decomposition_prompt)
-            subtasks = self._extract_subtasks(decomposition)
+            raw_decomposition = await self.llm.chat(decomposition_prompt)
+            subtasks = self._extract_subtasks(raw_decomposition)
 
             # Validate subtasks extraction
             if not subtasks or len(subtasks) < 3:
@@ -301,8 +336,7 @@ Return a numbered list of specific, actionable subtasks.
                         output_data={
                             "total_subtasks": len(subtasks),
                             "estimated_days": int(predictive_estimate.base_estimate_hours / 8) + 1,
-                            "overall_fallback_used": overall_fallback,
-                            "confidence_level": predictive_estimate.confidence_level
+                            "overall_fallback_used": overall_fallback
                         })
 
         logger.info("Planning completed",
@@ -313,17 +347,15 @@ Return a numbered list of specific, actionable subtasks.
                         "fallback_used": overall_fallback
                     })
 
+        # Clean return without duplication
         return {
             "task": description,
-            "classification": classification,
-            "decomposition": decomposition,
-            "subtasks": subtasks,
-            "complexity": classification.get("complexity", "medium"),
+            "classification": classification,  # Contains task_type, complexity, technical_uncertainty
+            "subtasks": subtasks,  # Clean list, no markdown
+            "predictive_estimate": asdict(predictive_estimate),  # Contains all estimation data
             "estimated_days": int(predictive_estimate.base_estimate_hours / 8) + 1,
-            "predictive_estimate": asdict(predictive_estimate),
             "fallback_used": overall_fallback,
-            "reasoning": reasoning,
-            "confidence_level": predictive_estimate.confidence_level
+            "reasoning": self._normalize_reasoning(reasoning)  # No duplication in output/output_data
         }
 
     @log_method
@@ -401,7 +433,7 @@ Return ONLY valid JSON (no markdown):
             "complexity": complexity,
             "estimate": asdict(estimate),
             "recommendation": self._generate_estimate_recommendation(estimate),
-            "reasoning": reasoning
+            "reasoning": self._normalize_reasoning(reasoning)
         }
 
     @log_method
@@ -511,7 +543,7 @@ Calculate risk-adjusted timeline:
             "risk_identification": risk_identification,
             "risk_prioritization": risk_prioritization,
             "timeline_adjustment": timeline_adjustment,
-            "reasoning": reasoning,
+            "reasoning": self._normalize_reasoning(reasoning),
             "recommendation": "Review risk mitigation plans before starting execution"
         }
 
@@ -528,6 +560,7 @@ Calculate risk-adjusted timeline:
         PROPER reasoning composition:
         - Planning phase results embedded as reference (NOT extended)
         - Jira phase has its own sequential reasoning
+        - No duplication of reasoning data
         """
         reasoning: List[ReasoningStep] = []
 
@@ -542,7 +575,6 @@ Calculate risk-adjusted timeline:
         self._next_step(reasoning, "Strategic planning phase completed",
                         output_data={
                             "subtasks_count": len(plan_result.get("subtasks", [])),
-                            "confidence_level": plan_result.get("confidence_level", 0.5),
                             "planning_steps_executed": len(plan_result.get("reasoning", [])),
                             "fallback_used": plan_result.get("fallback_used", False)
                         })
@@ -561,8 +593,7 @@ Calculate risk-adjusted timeline:
                 **plan_result,
                 "jira_issues": [],
                 "jira_mode": self.jira.mode,
-                "planning_reasoning": plan_result.get("reasoning", []),
-                "reasoning": reasoning
+                "reasoning": self._normalize_reasoning(reasoning)
             }
 
         # PHASE 2: Jira Integration
@@ -626,13 +657,15 @@ Calculate risk-adjusted timeline:
         logger.info("Plan with Jira completed",
                     extra={"task": description, "issues": len(jira_issues)})
 
+        # Clean return: Remove reasoning from plan_result to avoid nested reasoning bloat
+        plan_metadata = {k: v for k, v in plan_result.items() if k != "reasoning"}
+
         return {
             "task": description,
-            "plan": plan_result,  # Complete planning result
+            "plan_metadata": plan_metadata,  # Planning data without nested reasoning
             "jira_issues": jira_issues,
             "jira_mode": self.jira.mode,
-            "planning_reasoning": plan_result.get("reasoning", []),  # Separate for reference
-            "reasoning": reasoning  # Main Jira integration reasoning
+            "reasoning": self._normalize_reasoning(reasoning)  # Only Jira integration reasoning
         }
 
     # ========================================================================
@@ -699,7 +732,12 @@ Calculate risk-adjusted timeline:
             return f"Low confidence estimate. Wide range: {estimate.confidence_interval_low:.1f}h - {estimate.confidence_interval_high:.1f}h"
 
     def _extract_subtasks(self, decomposition: str) -> List[str]:
-        """Extract subtasks from decomposition text"""
+        """
+        Extract subtasks from decomposition text
+
+        Removes markdown formatting (**bold**)
+        Extracts clean task names (before colon)
+        """
         patterns = [
             r'\d+\.\s+(.+?)(?=\n\d+\.|\n\n|$)',
             r'[-•]\s+(.+?)(?=\n[-•]|\n\n|$)',
@@ -709,19 +747,32 @@ Calculate risk-adjusted timeline:
         for pattern in patterns:
             matches = re.findall(pattern, decomposition, re.MULTILINE | re.DOTALL)
             if matches:
-                subtasks.extend([
-                    match.strip().split('\n')[0].strip()
-                    for match in matches if match.strip()
-                ])
+                for match in matches:
+                    if match.strip():
+                        # Clean the subtask text
+                        clean = match.strip().split('\n')[0].strip()
+
+                        # Remove markdown bold formatting
+                        clean = re.sub(r'\*\*(.*?)\*\*', r'\1', clean)
+
+                        # Extract just the task name (before colon if present)
+                        if ':' in clean:
+                            clean = clean.split(':')[0].strip()
+
+                        subtasks.append(clean)
                 break
 
         if not subtasks:
             lines = decomposition.split('\n')
-            subtasks = [
-                line.strip().lstrip('0123456789.-•* ')
-                for line in lines
-                if line.strip() and 20 < len(line.strip()) < 200
-            ]
+            for line in lines:
+                if line.strip() and 20 < len(line.strip()) < 200:
+                    clean = line.strip().lstrip('0123456789.-•* ')
+                    # Remove markdown bold
+                    clean = re.sub(r'\*\*(.*?)\*\*', r'\1', clean)
+                    # Extract task name before colon
+                    if ':' in clean:
+                        clean = clean.split(':')[0].strip()
+                    subtasks.append(clean)
 
         return subtasks[:10]
 
