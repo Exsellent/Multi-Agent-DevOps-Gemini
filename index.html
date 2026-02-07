@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Gemini Multi-Agent DevOps</title>
+    <style>
+        :root {
+            --bg-dark: #131314;
+            --surface: #1e1f20;
+            --text-main: #e3e3e3;
+            --text-dim: #b4b4b4;
+            --border: #3c4043;
+            --gemini-blue: #4285F4;
+            --gemini-purple: #9b72cb;
+            --gemini-pink: #d96570;
+            --input-bg: #2a2b2e;
+            --success: #34a853;
+            --warning: #fbbc04;
+            --error: #ea4335;
+            --marathon: #ff9800;
+            --code: #00bcd4;
+        }
+
+        [data-theme="light"] {
+            --bg-dark: #f0f2f5;
+            --surface: #ffffff;
+            --text-main: #1f1f1f;
+            --text-dim: #5f6368;
+            --border: #dadce0;
+            --input-bg: #f8f9fa;
+        }
+
+        * {
+            box-sizing: border-box;
+            transition: all 0.25s ease;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .header {
+            width: 100%;
+            max-width: 1400px;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .title {
+            font-size: 28px;
+            font-weight: 600;
+            background: linear-gradient(90deg, var(--gemini-blue), var(--gemini-purple), var(--gemini-pink), var(--gemini-blue));
+            background-size: 300% 300%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: gradientFlow 8s ease infinite;
+        }
+
+        @keyframes gradientFlow {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .subtitle {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-top: 4px;
+        }
+
+        .theme-switch {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+
+        .switch {
+            position: relative;
+            width: 48px;
+            height: 24px;
+        }
+
+        .switch input {
+            display: none;
+        }
+
+        .slider {
+            position: absolute;
+            inset: 0;
+            background-color: #777;
+            border-radius: 24px;
+            cursor: pointer;
+        }
+
+        .slider::before {
+            content: "";
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            left: 4px;
+            top: 4px;
+            background-color: white;
+            border-radius: 50%;
+            transition: transform 0.3s ease;
+        }
+
+        input:checked + .slider {
+            background-color: var(--gemini-blue);
+        }
+
+        input:checked + .slider::before {
+            transform: translateX(24px);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1400px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 24px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+        }
+
+        .panel-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .badge {
+            font-size: 10px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            background: var(--gemini-blue);
+            color: white;
+            font-weight: 600;
+        }
+
+        .badge.new {
+            background: var(--marathon);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .label {
+            font-size: 13px;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+
+        textarea, select {
+            width: 100%;
+            background-color: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-main);
+            padding: 12px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        textarea {
+            height: 120px;
+            resize: vertical;
+        }
+
+        select {
+            cursor: pointer;
+            margin-bottom: 12px;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            color: white;
+            background: linear-gradient(45deg, var(--gemini-blue), var(--gemini-purple));
+            box-shadow: 0 4px 12px rgba(66, 133, 244, 0.25);
+            margin-top: 12px;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(155, 114, 203, 0.45);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .agents-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .agent-card {
+            background-color: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+            text-align: center;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .agent-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(66, 133, 244, 0.1), transparent);
+            transition: left 0.5s;
+        }
+
+        .agent-card:hover::before {
+            left: 100%;
+        }
+
+        .agent-card:hover {
+            border-color: var(--gemini-blue);
+            transform: translateY(-2px);
+        }
+
+        .agent-card.active {
+            border-color: var(--gemini-blue);
+            background: linear-gradient(135deg, rgba(66, 133, 244, 0.1), rgba(155, 114, 203, 0.1));
+        }
+
+        .agent-card.working {
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .agent-card.new-agent {
+            border: 2px solid var(--marathon);
+            position: relative;
+        }
+
+        .agent-card.new-agent::after {
+            content: 'NEW';
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            font-size: 9px;
+            padding: 2px 6px;
+            background: var(--marathon);
+            color: white;
+            border-radius: 8px;
+            font-weight: 700;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(66, 133, 244, 0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(66, 133, 244, 0); }
+        }
+
+        .agent-status {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--text-dim);
+        }
+
+        .agent-status.success { background-color: var(--success); }
+        .agent-status.working { 
+            background-color: var(--warning);
+            animation: blink 1s infinite;
+        }
+        .agent-status.error { background-color: var(--error); }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .agent-icon {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .agent-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .agent-description {
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-top: 4px;
+            line-height: 1.3;
+        }
+
+        .agent-port {
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-top: 6px;
+            font-family: monospace;
+        }
+
+        .output-container {
+            margin-top: 16px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .output-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .output-container::-webkit-scrollbar-track {
+            background: var(--input-bg);
+            border-radius: 4px;
+        }
+
+        .output-container::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        .output-container::-webkit-scrollbar-thumb:hover {
+            background: var(--gemini-blue);
+        }
+
+        .log-entry {
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            background-color: var(--input-bg);
+            border-left: 3px solid var(--gemini-blue);
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .log-entry.success {
+            border-left-color: var(--success);
+        }
+
+        .log-entry.error {
+            border-left-color: var(--error);
+        }
+
+        .log-entry.warning {
+            border-left-color: var(--warning);
+        }
+
+        .result-card {
+            background-color: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 12px;
+        }
+
+        .result-card h4 {
+            margin: 0 0 12px 0;
+            color: var(--gemini-blue);
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .result-card pre {
+            margin: 0;
+            font-size: 12px;
+            color: var(--text-dim);
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 12px;
+            background: var(--bg-dark);
+            border-radius: 6px;
+        }
+
+        .result-summary {
+            background: rgba(66, 133, 244, 0.1);
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+
+        .result-summary strong {
+            color: var(--gemini-blue);
+        }
+
+        .loader {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--border);
+            border-top-color: var(--gemini-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .cors-warning {
+            background-color: rgba(251, 188, 4, 0.1);
+            border: 1px solid var(--warning);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 12px;
+            font-size: 12px;
+        }
+
+        .cors-warning strong {
+            color: var(--warning);
+        }
+
+        .agent-category {
+            font-size: 11px;
+            color: var(--text-dim);
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border);
+        }
+
+        .stats-bar {
+            display: flex;
+            gap: 16px;
+            margin-top: 16px;
+            padding: 12px;
+            background: var(--input-bg);
+            border-radius: 8px;
+        }
+
+        .stat-item {
+            flex: 1;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--gemini-blue);
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-dim);
+            margin-top: 4px;
+        }
+
+        .quick-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .quick-action-btn {
+            flex: 1;
+            padding: 8px;
+            font-size: 12px;
+            background: var(--input-bg);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+        }
+
+        .quick-action-btn:hover {
+            background: var(--gemini-blue);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+<div class="header">
+    <div>
+        <div class="title">🤖 Gemini Multi-Agent DevOps</div>
+        <div class="subtitle">9 Intelligent Agents | Planning, Architecture Intelligence & Autonomous Execution</div>
+    </div>
+    <div class="theme-switch">
+        <span id="themeLabel">Dark</span>
+        <label class="switch">
+            <input type="checkbox" id="themeToggle">
+            <span class="slider"></span>
+        </label>
+    </div>
+</div>
+
+<div class="container">
+    <!-- Input Panel -->
+    <div class="panel">
+        <div class="panel-title">📝 Task Input</div>
+
+        <div class="label">Select Agent</div>
+        <select id="agentSelect">
+            <optgroup label="Core Planning & Analysis">
+                <option value="planner"> Planner - Multi-Step Reasoning & Predictive Estimation</option>
+                <option value="risks">Risks - Security & Compliance Audit</option>
+                <option value="progress">Progress - Velocity & Completion Tracking</option>
+                <option value="digest">Digest - Report Generation</option>
+            </optgroup>
+            <optgroup label="🆕 Advanced Intelligence (NEW)">
+                <option value="architecture_intelligence">Architecture Intelligence - Deep Spatial-Temporal Analysis</option>
+                <option value="marathon">Marathon - Long-Running Autonomous Tasks</option>
+                <option value="code_execution">Code Execution - Generate, Test & Verify Autonomously</option>
+            </optgroup>
+            <optgroup label="Monitoring & Operations">
+                <option value="health">Health Monitor - System Status & Circuit Breakers</option>
+                <option value="metrics">Metrics - Performance & Observability</option>
+            </optgroup>
+        </select>
+
+        <div class="label">Task Description</div>
+        <textarea id="taskInput" placeholder="Example: Implement OAuth2 authentication with JWT tokens, rate limiting, and Redis session store"></textarea>
+
+        <button onclick="executeAgent()" id="executeBtn">
+            ⚡ Execute Agent
+        </button>
+
+        <div class="quick-actions">
+            <button class="quick-action-btn" onclick="clearAllLogs()">🗑️ Clear</button>
+            <button class="quick-action-btn" onclick="checkAllHealth()">🏥 Health Check</button>
+            <button class="quick-action-btn" onclick="showAgentInfo()">ℹ️ Info</button>
+        </div>
+
+        <div class="stats-bar">
+            <div class="stat-item">
+                <div class="stat-value" id="totalAgents">9</div>
+                <div class="stat-label">Total Agents</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="activeAgents">0</div>
+                <div class="stat-label">Active</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="totalExecutions">0</div>
+                <div class="stat-label">Executions</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Agents Grid Panel -->
+    <div class="panel">
+        <div class="panel-title">
+            🔌 Agent Status
+            <span class="badge new">3 NEW</span>
+        </div>
+        <div class="agents-grid" id="agentsGrid"></div>
+    </div>
+</div>
+
+<div class="container" style="grid-template-columns: 1fr;">
+    <!-- Output Panel -->
+    <div class="panel">
+        <div class="panel-title">📊 Execution Results</div>
+        <div class="output-container" id="outputContainer">
+            <div class="log-entry">
+                💡 System ready. 9 agents online. Select an agent and provide input to start execution.
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Configuration
+    const API_BASE = 'http://localhost';
+
+    const agents = [
+        // Core Planning
+        {
+            id: 'planner', 
+            name: 'Planner',
+            port: 8301, 
+            icon: '📋', 
+            method: 'tools/plan_with_reasoning',
+            description: 'Strategic planning with multi-step reasoning & predictive estimation',
+            category: 'Planning',
+            isNew: false
+        },
+        {
+            id: 'risks', 
+            name: 'Risks', 
+            port: 8303, 
+            icon: '⚠️', 
+            method: 'tools/analyze_risks',
+            description: 'Specialized security & compliance audit',
+            category: 'Analysis',
+            isNew: false
+        },
+        {
+            id: 'progress', 
+            name: 'Progress', 
+            port: 8302, 
+            icon: '📈', 
+            method: 'tools/jira_velocity',
+            description: 'Velocity tracking & completion analysis',
+            category: 'Analysis',
+            isNew: false
+        },
+        {
+            id: 'digest', 
+            name: 'Digest', 
+            port: 8304, 
+            icon: '📄', 
+            method: 'tools/daily_digest',
+            description: 'Daily project digest generation',
+            category: 'Reporting',
+            isNew: false
+        },
+        
+        // NEW Advanced Agents
+        {
+            id: 'architecture_intelligence',
+            name: 'Architecture Intelligence', 
+            port: 8305, 
+            icon: '🏗️', 
+            method: 'tools/analyze_architecture_deep',
+            description: 'Spatial-temporal architecture analysis with failure propagation',
+            category: 'Advanced',
+            isNew: true
+        },
+        {
+            id: 'marathon', 
+            name: 'Marathon', 
+            port: 8308, 
+            icon: '🏃', 
+            method: 'tools/start_marathon_task',
+            description: 'Long-running autonomous tasks with self-correction (hours/days)',
+            category: 'Advanced',
+            isNew: true
+        },
+        {
+            id: 'code_execution', 
+            name: 'Code Execution', 
+            port: 8309, 
+            icon: '💻', 
+            method: 'tools/generate_and_test_code',
+            description: 'Autonomous code generation, testing & debugging loops',
+            category: 'Advanced',
+            isNew: true
+        },
+        
+        // Monitoring
+        {
+            id: 'health', 
+            name: 'Health Monitor', 
+            port: 8306, 
+            icon: '❤️', 
+            method: 'tools/check_health',
+            description: 'System health checks & circuit breakers',
+            category: 'Monitoring',
+            isNew: false
+        },
+        {
+            id: 'metrics', 
+            name: 'Metrics', 
+            port: 8307, 
+            icon: '📊', 
+            method: 'tools/get_metrics',
+            description: 'Performance metrics & observability',
+            category: 'Monitoring',
+            isNew: false
+        }
+    ];
+
+    let executionCount = 0;
+
+    // Theme Management
+    function initTheme() {
+        const themeToggle = document.getElementById('themeToggle');
+        const themeLabel = document.getElementById('themeLabel');
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        themeToggle.checked = savedTheme === 'light';
+        themeLabel.textContent = savedTheme.charAt(0).toUpperCase() + savedTheme.slice(1);
+
+        themeToggle.addEventListener('change', () => {
+            const newTheme = themeToggle.checked ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            themeLabel.textContent = newTheme.charAt(0).toUpperCase() + newTheme.slice(1);
+            localStorage.setItem('theme', newTheme);
+        });
+    }
+
+    // Initialize agents grid
+    function initAgentsGrid() {
+        const grid = document.getElementById('agentsGrid');
+        grid.innerHTML = agents.map(agent => `
+            <div class="agent-card ${agent.isNew ? 'new-agent' : ''}" data-id="${agent.id}">
+                <div class="agent-status"></div>
+                <div class="agent-icon">${agent.icon}</div>
+                <div class="agent-name">${agent.name}</div>
+                <div class="agent-description">${agent.description}</div>
+                <div class="agent-port">:${agent.port}</div>
+                <div class="agent-category">${agent.category}</div>
+            </div>
+        `).join('');
+
+        // Update stats
+        document.getElementById('totalAgents').textContent = agents.length;
+    }
+
+    // Add log entry
+    function addLog(message, type = 'info') {
+        const container = document.getElementById('outputContainer');
+        const entry = document.createElement('div');
+        entry.className = `log-entry ${type}`;
+        const timestamp = new Date().toLocaleTimeString();
+        entry.textContent = `[${timestamp}] ${message}`;
+        container.appendChild(entry);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    // Clear logs
+    function clearLogs() {
+        document.getElementById('outputContainer').innerHTML = '';
+    }
+
+    function clearAllLogs() {
+        clearLogs();
+        addLog('💡 Logs cleared. Ready for new execution.', 'info');
+    }
+
+    // Update agent status
+    function updateAgentStatus(agentId, status) {
+        const card = document.querySelector(`[data-id="${agentId}"]`);
+        if (card) {
+            const statusDot = card.querySelector('.agent-status');
+            statusDot.className = `agent-status ${status}`;
+            
+            card.classList.remove('working', 'active');
+            if (status === 'working') {
+                card.classList.add('working');
+            } else if (status === 'success') {
+                card.classList.add('active');
+            }
+        }
+
+        // Update active count
+        const activeCount = document.querySelectorAll('.agent-card.active').length;
+        document.getElementById('activeAgents').textContent = activeCount;
+    }
+
+    // Build request parameters based on agent type
+    function buildParams(agentId, inputValue) {
+        const params = {};
+        
+        switch(agentId) {
+            case 'planner':
+                params.description = inputValue || 'Implement OAuth2 authentication with JWT';
+                params.context = 'Enterprise SaaS platform';
+                break;
+            case 'risks':
+                params.feature = inputValue || 'OAuth2 implementation';
+                break;
+            case 'architecture_intelligence':
+                params.image_base64 = 'demo_placeholder';
+                params.context = inputValue || 'Multi-agent DevOps system architecture';
+                break;
+            case 'marathon':
+                params.task_description = inputValue || 'Monitor CI/CD pipeline for 24 hours';
+                params.duration_hours = 24;
+                params.success_criteria = 'All deployments successful with zero downtime';
+                break;
+            case 'code_execution':
+                params.requirement = inputValue || 'Create a REST API endpoint for user authentication';
+                params.language = 'python';
+                break;
+            case 'health':
+                params.agents = {};
+                agents.forEach(agent => {
+                    params.agents[agent.id] = `http://${agent.id}:${agent.port}/health`;
+                });
+                break;
+            default:
+                // progress, digest, metrics don't need params
+                break;
+        }
+        
+        return params;
+    }
+
+    // Execute agent
+    async function executeAgent() {
+        const select = document.getElementById('agentSelect');
+        const input = document.getElementById('taskInput');
+        const btn = document.getElementById('executeBtn');
+
+        const selectedId = select.value;
+        const agent = agents.find(a => a.id === selectedId);
+
+        if (!agent) {
+            addLog('❌ Agent not found', 'error');
+            return;
+        }
+
+        // UI Updates
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loader"></span> Processing...';
+        clearLogs();
+        addLog(`🚀 Executing ${agent.name} Agent on port ${agent.port}...`);
+        updateAgentStatus(agent.id, 'working');
+
+        try {
+            const params = buildParams(agent.id, input.value);
+            const url = `${API_BASE}:${agent.port}/mcp`;
+            
+            addLog(`📡 Sending request to ${url}...`);
+            addLog(`📦 Method: ${agent.method}`, 'info');
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    method: agent.method,
+                    params: params
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            addLog(`✅ ${agent.name} completed successfully`, 'success');
+            updateAgentStatus(agent.id, 'success');
+
+            // Update execution count
+            executionCount++;
+            document.getElementById('totalExecutions').textContent = executionCount;
+
+            // Display results
+            displayResults(agent, data);
+
+        } catch (error) {
+            console.error('Agent execution error:', error);
+            
+            let errorMessage = error.message;
+            
+            // CORS error detection
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                errorMessage = 'CORS Error: Cannot connect to agent. Ensure agent is running and CORS is enabled.';
+                addCorsWarning();
+            }
+            
+            addLog(`❌ Error: ${errorMessage}`, 'error');
+            updateAgentStatus(agent.id, 'error');
+
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '⚡ Execute Agent';
+        }
+    }
+
+    // Display results
+    function displayResults(agent, data) {
+        const container = document.getElementById('outputContainer');
+        const resultCard = document.createElement('div');
+        resultCard.className = 'result-card';
+        
+        // Extract key information based on agent type
+        let summary = '';
+        
+        // Enhanced Planner results
+        if (data.classification) {
+            summary += `<strong>Task Type:</strong> ${data.classification.task_type || 'N/A'}<br>`;
+            summary += `<strong>Complexity:</strong> ${data.classification.complexity || 'N/A'}<br>`;
+        }
+        if (data.predictive_estimate) {
+            const est = data.predictive_estimate;
+            summary += `<strong>Estimate:</strong> ${est.base_estimate_hours || 0}h `;
+            summary += `(${est.confidence_interval_low || 0}h - ${est.confidence_interval_high || 0}h)<br>`;
+            summary += `<strong>Confidence:</strong> ${((est.confidence_level || 0) * 100).toFixed(0)}%<br>`;
+        }
+        
+        // Marathon results
+        if (data.task_id) {
+            summary += `<strong>Task ID:</strong> ${data.task_id}<br>`;
+            summary += `<strong>Status:</strong> ${data.status || 'N/A'}<br>`;
+        }
+        if (data.progress_percentage !== undefined) {
+            summary += `<strong>Progress:</strong> ${data.progress_percentage}%<br>`;
+        }
+        
+        // Code Execution results
+        if (data.success_rate !== undefined) {
+            summary += `<strong>Test Success Rate:</strong> ${data.success_rate}%<br>`;
+            summary += `<strong>Production Ready:</strong> ${data.production_ready ? '✅ Yes' : '❌ No'}<br>`;
+        }
+        
+        // Architecture Intelligence results
+        if (data.analysis_type === 'deep_architecture_intelligence') {
+            summary += `<strong>Analysis Type:</strong> Spatial-Temporal-Causal<br>`;
+            summary += `<strong>Methodology:</strong> ${data.methodology || 'N/A'}<br>`;
+        }
+        
+        // Risks results
+        if (data.detected_risks) {
+            summary += `<strong>Risks Detected:</strong> ${data.detected_risks.length}<br>`;
+        }
+        
+        // Progress results
+        if (data.total_issues !== undefined) {
+            summary += `<strong>Total Issues:</strong> ${data.total_issues}<br>`;
+        }
+        if (data.completion_rate !== undefined) {
+            summary += `<strong>Completion Rate:</strong> ${data.completion_rate}%<br>`;
+        }
+        
+        // Health Monitor results
+        if (data.health_status) {
+            const healthyAgents = Object.values(data.health_status).filter(
+                h => h.status_code === 200
+            ).length;
+            summary += `<strong>Healthy Agents:</strong> ${healthyAgents}/${Object.keys(data.health_status).length}<br>`;
+        }
+        
+        resultCard.innerHTML = `
+            <h4>📦 Response from ${agent.name}</h4>
+            ${summary ? `<div class="result-summary">${summary}</div>` : ''}
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+        `;
+        container.appendChild(resultCard);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    // Add CORS warning
+    function addCorsWarning() {
+        const container = document.getElementById('outputContainer');
+        const warning = document.createElement('div');
+        warning.className = 'cors-warning';
+        warning.innerHTML = `
+            <strong>⚠️ CORS Configuration Required</strong><br>
+            Add to your agent's FastAPI app:<br>
+            <pre style="margin-top: 8px;">
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)</pre>
+        `;
+        container.appendChild(warning);
+    }
+
+    // Check all health
+    async function checkAllHealth() {
+        addLog('🏥 Starting health check for all agents...', 'info');
+        
+        let healthyCount = 0;
+        let unhealthyCount = 0;
+        
+        for (const agent of agents) {
+            try {
+                const response = await fetch(`${API_BASE}:${agent.port}/health`, {
+                    method: 'GET',
+                    timeout: 3000
+                });
+                
+                if (response.ok) {
+                    updateAgentStatus(agent.id, 'success');
+                    healthyCount++;
+                    addLog(`✅ ${agent.name} - Healthy`, 'success');
+                } else {
+                    updateAgentStatus(agent.id, 'error');
+                    unhealthyCount++;
+                    addLog(`❌ ${agent.name} - Unhealthy (${response.status})`, 'error');
+                }
+            } catch (error) {
+                updateAgentStatus(agent.id, 'error');
+                unhealthyCount++;
+                addLog(`❌ ${agent.name} - Unreachable`, 'error');
+            }
+        }
+        
+        addLog(`🏥 Health check complete: ${healthyCount} healthy, ${unhealthyCount} unhealthy`, 
+                unhealthyCount > 0 ? 'warning' : 'success');
+    }
+
+    // Show agent info
+    function showAgentInfo() {
+        clearLogs();
+        addLog('ℹ️ Multi-Agent DevOps System - Agent Information', 'info');
+        addLog('─'.repeat(60), 'info');
+        
+        const categories = {};
+        agents.forEach(agent => {
+            if (!categories[agent.category]) {
+                categories[agent.category] = [];
+            }
+            categories[agent.category].push(agent);
+        });
+        
+        Object.keys(categories).sort().forEach(category => {
+            addLog(`\n📁 ${category.toUpperCase()}`, 'info');
+            categories[category].forEach(agent => {
+                addLog(`  ${agent.icon} ${agent.name} (:${agent.port})`, 'info');
+                addLog(`     ${agent.description}`, 'info');
+                if (agent.isNew) {
+                    addLog(`     🆕 NEW - Advanced capability`, 'warning');
+                }
+            });
+        });
+        
+        addLog('\n─'.repeat(60), 'info');
+        addLog('💡 Select an agent from the dropdown to execute tasks', 'info');
+    }
+
+    // Initialize on load
+    document.addEventListener('DOMContentLoaded', () => {
+        initTheme();
+        initAgentsGrid();
+        addLog('💡 System ready. 9 agents online. Select an agent to begin.', 'info');
+        
+        // Add keyboard shortcut
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+                executeAgent();
+            }
+        });
+    });
+</script>
+</body>
+</html>
