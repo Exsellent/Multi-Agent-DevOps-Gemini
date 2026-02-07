@@ -13,7 +13,6 @@ image::assets/gemini_G3.png[Gemini G3,width=900,align=center]
 
 Built for the **Gemini 3 Hackathon** — implements **Marathon Agent** and **Vibe Engineering** tracks.
 
-====
 == Badges
 
 image:https://img.shields.io/badge/License-MIT-yellow.svg[License: MIT,link=https://opensource.org/licenses/MIT]
@@ -24,7 +23,6 @@ image:https://img.shields.io/badge/Gemini-3-blue.svg[Gemini 3,link=https://deepm
 image:https://img.shields.io/badge/FastAPI-framework-green.svg[FastAPI,link=https://fastapi.tiangolo.com/]
 image:https://img.shields.io/badge/n8n-automation-orange.svg[n8n,link=https://n8n.io/]
 
-====
 
 == Table of Contents
 
@@ -51,10 +49,10 @@ image:https://img.shields.io/badge/n8n-automation-orange.svg[n8n,link=https://n8
 * <<license,License>>
 * <<team,Team>>
 
-====
+____
 
 [[project-overview]]
-== Project Overview
+Project Overview
 
 This system implements a multi-agent architecture featuring:
 
@@ -67,6 +65,7 @@ This system implements a multi-agent architecture featuring:
 * Long-running tasks with persistent state (Marathon Agent)
 * Production-ready components (health checks, metrics, circuit breakers)
 
+
 image::assets/AI_agents.png[Multi-Agent System Overview,width=900,align=center]
 
 This project demonstrates how Gemini 3 can be used not as a single LLM call,
@@ -76,9 +75,9 @@ production-grade orchestration.
 
 **Golden Standard Multi-Agent Design** All agents follow the gold standard of multi-agent systems: clear separation
 of responsibilities, transparent reasoning chains, reproducible outputs, and graceful fallback with health
-monitoring. This ensures reports are structured, auditable, and coach-ready.
+monitoring.
+____
 
-====
 
 [[system-architecture]]
 == System Architecture
@@ -107,11 +106,13 @@ monitoring. This ensures reports are structured, auditable, and coach-ready.
 image::docs/diagrams/architecture.png[Architecture Diagram]
 
 The diagram illustrates:
+
 * n8n as central workflow orchestrator
 * 9 independent MCP agents in Docker containers
 * Gemini integration (text + vision + long context)
 * Shared services: health monitoring, metrics, static assets
 * Resilience: circuit breakers and health checks
+
 
 [[pipeline]]
 === Request Processing Pipeline (n8n → agents)
@@ -119,6 +120,7 @@ The diagram illustrates:
 image::docs/diagrams/pipeline.png[Request Processing Pipeline]
 
 This diagram shows the full end-to-end workflow:
+
 * User trigger → n8n
 * Planner coordinates parallel calls to specialized agents
 * Aggregation and final digest
@@ -137,7 +139,6 @@ The Planner acts as coordinator, delegating to specialized agents (Risks, Archit
 * **Vibe Engineering Track** — Autonomous code generation, execution,
   testing, and debugging without human intervention.
 
-====
 
 
 [[agent-architecture]]
@@ -153,7 +154,6 @@ All agents are implemented as independent microservices:
 * Unified MCP message schema
 * ReasoningStep tracing
 
-====
 
 [[quick-start]]
 == Quick Start
@@ -194,13 +194,25 @@ docker compose up --build
 +
 http://localhost:5679
 
-**Try it:**
-[source,bash]
+. Try it (Web UI)
++
+http://localhost:8080
 
-----
-# Open browser
-open http://localhost:8001
-----
+
+[[installation]]
+=== Interactive Web UI
+
+The system includes a **production-quality web interface** for easy testing:
+
+image::assets/ui-screenshot.png[Web UI Interface,width=700,align=center]
+
+**Features:**
+
+* 🎯 **One-click agent selection** - visual agent cards with real-time status
+* 📊 **Task Description** - entering a task that needs to be solved
+* 🌓 **Dark/Light themes** - accessible design
+* ⚡ **Real-time results** - formatted JSON output with syntax highlighting
+* 📈 **Agent health monitoring** - visual status indicators
 
 [[gemini-integration]]
 == Gemini Integration
@@ -238,7 +250,7 @@ The system autonomously:
 * Verifies proposed changes via code execution
 * Produces a concise, human-readable report
 ```
-====
+
 
 [[demo-workflow]]
 == Demo Workflow
@@ -259,7 +271,6 @@ n8n Orchestrator
   └─ Health Monitor (background resilience)
 ----
 
-====
 
 [[configuration]]
 == Configuration
@@ -274,7 +285,7 @@ VISION_PROVIDER=gemini
 VISION_MODEL=gemini-3
 ----
 
-====
+
 
 [[documentation]]
 == Documentation
@@ -283,7 +294,7 @@ VISION_MODEL=gemini-3
 * docs/diagrams/ (PlantUML sources)
 * Swagger UI at `/docs` for each agent
 
-====
+
 
 [[conclusion]]
 == Conclusion
@@ -325,7 +336,7 @@ MIT License
 [[team]]
 == Team
 
-**Tatiana Hlazkina** — AI & Backend Engineer
+**Tatiana Hlazkina** - AI & Backend Engineer
 📧 tatiana.adlock@gmail.com
 🔗 https://github.com/Exsellent/
 
