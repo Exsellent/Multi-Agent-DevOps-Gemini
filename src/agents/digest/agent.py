@@ -482,20 +482,18 @@ Overall, team morale remains high. The atmosphere is collaborative and motivated
         }
 
 
-# Health check endpoint compatibility
 def get_agent_status() -> Dict[str, Any]:
-    """
-    Returns agent status in format compatible with HealthMonitor
-    """
     return {
-        "agent_name": "digest",
+        "agent_name": "progress",
         "status": "HEALTHY",
         "capabilities": [
+            "analyze_progress",
+            "jira_velocity",
             "daily_digest",
             "validate_digest",
             "extract_key_points"
         ],
-        "validation_enabled": True,
-        "fallback_strategy": "baseline_digest",
+        "agent_type": "hybrid",
+        "jira_integration": True,
         "timestamp": datetime.now().isoformat()
     }
