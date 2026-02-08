@@ -1,8 +1,8 @@
 import logging
 from dataclasses import dataclass, asdict
 from datetime import datetime
-from enum import Enum
 from typing import List, Dict, Any, Optional
+from enum import Enum
 
 from shared.llm_client import LLMClient
 from shared.mcp_base import MCPAgent
@@ -727,7 +727,7 @@ Be thorough and specific. Cite security standards (OWASP, CWE) where applicable.
             "confidence_level": "conservative" if analysis_mode == RiskAnalysisMode.BASELINE else "high",
             "llm_status": "available" if analysis_mode == RiskAnalysisMode.LLM else "unavailable",
 
-            # Executive Summary (top-level for UI visibility)
+            # NEW: Executive Summary (top-level for UI visibility)
             "executive_summary": asdict(executive_summary),
 
             # Structured risks (not plain strings!)
