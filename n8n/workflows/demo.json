@@ -1,0 +1,333 @@
+{
+  "name": "Gemini Multi-Agent DevOps - Demo",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "1",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "task_description",
+              "value": "Implement OAuth2 authentication with JWT tokens"
+            },
+            {
+              "name": "architecture_image",
+              "value": "assets/architecture.png"
+            }
+          ]
+        }
+      },
+      "id": "2",
+      "name": "Set Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://planner:8301/mcp",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "= { \"method\": \"plan_with_reasoning\", \"params\": { \"description\": \"{{ $json.task_description }}\" } }"
+      },
+      "id": "3",
+      "name": "Planner Agent (Enhanced)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        680,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://risks:8303/mcp",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "= { \"method\": \"analyze_risks\", \"params\": { \"feature\": \"{{ $json.task_description }}\", \"plan_decomposition\": \"{{ $node[\"Planner Agent (Enhanced)\"].json.decomposition }}\" } }"
+      },
+      "id": "4",
+      "name": "Risks Agent (Deep Analysis)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        900,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://architecture_intelligence:8305/mcp",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "= { \"method\": \"analyze_architecture\", \"params\": { \"image_url\": \"{{ $json.architecture_image }}\", \"context\": \"Architecture for {{ $json.task_description }} - Plan: {{ $node[\"Planner Agent (Enhanced)\"].json.decomposition }}\" } }"
+      },
+      "id": "5",
+      "name": "Architecture Intelligence",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://code_execution:8309/mcp",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "= { \"method\": \"generate_and_test_code\", \"params\": { \"requirement\": \"First subtask from plan: {{ $node[\"Planner Agent (Enhanced)\"].json.decomposition.subtasks[0] }}\" } }"
+      },
+      "id": "6",
+      "name": "Code Execution Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1120,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://marathon:8308/mcp",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "= { \"method\": \"estimate_marathon\", \"params\": { \"tasks\": \"{{ $node[\"Planner Agent (Enhanced)\"].json.decomposition }}\" } }"
+      },
+      "id": "7",
+      "name": "Marathon Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1340,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "id": "8",
+      "name": "Merge All Branches",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        1560,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://progress:8302/mcp",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"method\": \"analyze_progress\", \"params\": { \"jira_mode\": \"real\" } }"
+      },
+      "id": "9",
+      "name": "Progress Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1780,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all results\nconst items = $input.all();\nconst results = {};\n\n// Безопасно извлекаем данные из всех веток\nitems.forEach((item, index) => {\n  if (item && item.json) {\n    // Определяем источник данных по имени узла или структуре\n    const data = item.json;\n    \n    if (data.decomposition && data.plan_details) {\n      results.planner = data;\n    } else if (data.risks && data.mitigations) {\n      results.risks = data;\n    } else if (data.architecture_analysis) {\n      results.arch = data;\n    } else if (data.code_generation || data.test_results) {\n      results.code = data;\n    } else if (data.estimated_tasks || data.marathon_schedule) {\n      results.marathon = data;\n    } else if (data.progress_analysis || data.jira_data) {\n      results.progress = data;\n    } else {\n      // Если не удалось определить, сохраняем по индексу\n      results[`unknown_${index}`] = data;\n    }\n  }\n});\n\n// Убеждаемся, что все ожидаемые поля существуют\nconst finalResult = {\n  planner: results.planner || { error: \"No planner data\" },\n  risks: results.risks || { error: \"No risks data\" },\n  arch: results.arch || { error: \"No architecture data\" },\n  code: results.code || { error: \"No code data\" },\n  marathon: results.marathon || { error: \"No marathon data\" },\n  progress: results.progress || { error: \"No progress data\" }\n};\n\nreturn [{ json: finalResult }];"
+      },
+      "id": "10",
+      "name": "Aggregate Full Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://digest:8304/mcp",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"method\": \"daily_digest\", \"params\": {} }"
+      },
+      "id": "11",
+      "name": "Digest Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2220,
+        100
+      ]
+    },
+    {
+      "parameters": {
+    "url": "http://health_monitor:8306/mcp",
+    "method": "POST",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "{ \"method\": \"get_metrics\", \"params\": {} }"
+  },
+  "id": "12",
+  "name": "Metrics Agent",
+  "type": "n8n-nodes-base.httpRequest",
+  "typeVersion": 4.1,
+  "position": [2220, 300]
+
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Input": {
+      "main": [
+        [
+          {
+            "node": "Planner Agent (Enhanced)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planner Agent (Enhanced)": {
+      "main": [
+        [
+          {
+            "node": "Risks Agent (Deep Analysis)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Architecture Intelligence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Risks Agent (Deep Analysis)": {
+      "main": [
+        [
+          {
+            "node": "Code Execution Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Architecture Intelligence": {
+      "main": [
+        [
+          {
+            "node": "Merge All Branches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code Execution Agent": {
+      "main": [
+        [
+          {
+            "node": "Marathon Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge All Branches",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Marathon Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge All Branches",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge All Branches": {
+      "main": [
+        [
+          {
+            "node": "Progress Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Progress Agent": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Full Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Full Report": {
+      "main": [
+        [
+          {
+            "node": "Digest Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Digest Agent": {
+      "main": [
+        [
+          {
+            "node": "Metrics Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
