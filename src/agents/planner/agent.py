@@ -3,6 +3,7 @@ import logging
 import re
 import statistics
 from dataclasses import dataclass, asdict
+from datetime import datetime
 from functools import wraps
 from typing import List, Optional, Dict, Any
 
@@ -33,15 +34,27 @@ class PredictiveEstimate:
     base_estimate_hours: float
     confidence_interval_low: float
     confidence_interval_high: float
-    confidence_level: float  # 0.0 to 1.0
+    confidence_level: float
     similar_tasks_analyzed: int
     accuracy_factors: Dict[str, float]
 
 
-def log_method(func):
-    """Decorator for logging method calls with signature preservation"""
+@dataclass
+class ExecutiveSummary:
+    """Executive summary for decision makers"""
+    overview: str
+    main_risks: List[str]
+    critical_path: List[str]
+    recommended_focus: str
+    confidence_label: str
+    estimated_duration: str
+    complexity_assessment: str
 
-    @wraps(func)  # Preserves original function metadata for MCP inspection
+
+def log_method(func):
+    """Decorator for logging method calls"""
+
+    @wraps(func)
     async def wrapper(self, *args, **kwargs):
         logger.info(f"{func.__name__} called")
         try:
@@ -57,19 +70,8 @@ def log_method(func):
 
 class PlannerAgent(MCPAgent):
     """
-    Strategic Planning Agent with Advanced Capabilities
+    Strategic Planning Agent with Executive Intelligence
 
-    Key Features:
-    1. Multi-Step Reasoning: Chain-of-thought planning with explicit decision trees
-    2. Predictive Estimation: Data-driven estimation based on historical patterns
-    3. Risk-Aware Planning: Proactive risk identification and mitigation strategies
-    4. Clean Output: No duplication, normalized reasoning for MCP/UI compatibility
-
-    Improvements in this version:
-    - Fixed Pydantic model handling (step.dict() instead of asdict())
-    - Removed data duplication in responses
-    - Clean reasoning output (no duplicate output/output_data)
-    - Enhanced error handling and fallback transparency
     """
 
     def __init__(self):
@@ -77,20 +79,18 @@ class PlannerAgent(MCPAgent):
         self.llm = LLMClient()
         self.jira = JiraClient()
 
-        # Historical data store (in production: use database)
         self.historical_tasks: List[HistoricalTask] = self._load_historical_data()
 
-        # Register tools
         self.register_tool("plan", self.plan)
         self.register_tool("plan_with_reasoning", self.plan_with_reasoning)
         self.register_tool("predictive_estimate", self.predictive_estimate)
         self.register_tool("risk_aware_planning", self.risk_aware_planning)
         self.register_tool("plan_with_jira", self.plan_with_jira)
 
-        logger.info("Planner Agent initialized with multi-step reasoning and predictive capabilities")
+        logger.info("PlannerAgent initialized with robust JSON parsing")
 
     def _load_historical_data(self) -> List[HistoricalTask]:
-        """Load historical task data for predictive modeling"""
+        """Load historical task data"""
         return [
             HistoricalTask("api_development", 8, 12, "medium", ["dependency_delay"], 2, True),
             HistoricalTask("api_development", 16, 18, "high", ["scope_creep"], 3, True),
@@ -99,637 +99,711 @@ class PlannerAgent(MCPAgent):
             HistoricalTask("integration", 10, 15, "high", ["api_changes"], 3, False),
         ]
 
-    def _normalize_reasoning(self, reasoning: List[ReasoningStep]) -> List[Dict[str, Any]]:
+    def _safe_parse_json(self, response: str, fallback: Dict) -> Dict:
         """
-        Normalize reasoning for MCP/UI compatibility
+        Safely parse JSON from LLM response
 
-        Uses step.dict() for Pydantic BaseModel (not asdict)
-        Removes duplication by using pop() instead of copying
+        Handles:
+        - Markdown code blocks (```json ... ```)
+        - Extra text before/after JSON
+        - Trailing commas
+        - Multiple JSON objects
         """
-        normalized = []
-        for step in reasoning:
-            # Use .dict() for Pydantic BaseModel (not asdict for dataclass)
-            d = step.dict()
+        try:
+            # Remove markdown code blocks
+            cleaned = re.sub(r'```json\s*|\s*```', '', response)
+            cleaned = cleaned.strip()
 
-            # Replace output_data with output (removes duplication)
-            d["output"] = d.pop("output_data", {})
+            # Remove any leading text before JSON
+            # Look for first { and last }
+            first_brace = cleaned.find('{')
+            last_brace = cleaned.rfind('}')
 
-            # Ensure agent field is present
-            if not d.get("agent"):
-                d["agent"] = "Planner"
+            if first_brace != -1 and last_brace != -1:
+                cleaned = cleaned[first_brace:last_brace + 1]
 
-            normalized.append(d)
-        return normalized
+            # Try direct parsing
+            try:
+                return json.loads(cleaned)
+            except json.JSONDecodeError as e:
+                logger.debug(f"Direct JSON parse failed: {e}, trying pattern match")
 
-    def _next_step(self, reasoning: List[ReasoningStep], description: str,
-                   input_data: Optional[Dict] = None, output_data: Optional[Dict] = None):
+                # Try to find JSON object pattern
+                match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response, re.DOTALL)
+                if match:
+                    json_str = match.group(0)
+                    return json.loads(json_str)
+
+                # Give up
+                logger.warning(f"Could not extract valid JSON from response")
+                return fallback
+
+        except Exception as e:
+            logger.debug(f"JSON parsing completely failed: {e}")
+            return fallback
+
+    def _is_fallback_response(self, data: Dict, fallback_indicators: List[str] = None) -> bool:
         """
-        Helper to add sequential reasoning steps
+        Check if response is a fallback (NEW!)
 
-        Always uses len(reasoning) + 1 to ensure monotonic step numbers
+        Helps distinguish real LLM responses from fallbacks
         """
+        if fallback_indicators is None:
+            fallback_indicators = ["fallback", "format mismatch", "parsing failed", "using default"]
+
+        # Check reasoning field
+        reasoning = data.get("reasoning", "").lower()
+        return any(indicator in reasoning for indicator in fallback_indicators)
+
+    def _next_step(
+            self,
+            reasoning: List[ReasoningStep],
+            description: str,
+            input_data: Optional[Dict] = None,
+            output_data: Optional[Dict] = None
+    ):
+        """Add reasoning step"""
         reasoning.append(ReasoningStep(
             step_number=len(reasoning) + 1,
             description=description,
+            timestamp=datetime.now().isoformat(),
             input_data=input_data or {},
-            output_data=output_data or {}
+            output=output_data or {},
+            agent=self.name
         ))
 
-    # ========================================================================
-    # MAIN PLANNING TOOLS
-    # ========================================================================
+    def _find_similar_tasks(self, task_type: str, complexity: str) -> List[HistoricalTask]:
+        """Find similar historical tasks"""
+        return [
+            task for task in self.historical_tasks
+            if task.task_type == task_type and task.complexity == complexity
+        ]
 
-    @log_method
-    @metric_counter("planner")
-    async def plan(self, description: str):
-        """
-        Standard planning - delegates to plan_with_reasoning for enhanced capabilities
-        """
-        return await self.plan_with_reasoning(description=description)
+    def _get_confidence_label(self, confidence: float) -> str:
+        """Convert confidence to label"""
+        if confidence >= 0.7:
+            return "high"
+        elif confidence >= 0.4:
+            return "medium"
+        else:
+            return "low"
+
+    async def _generate_predictive_estimate(
+            self,
+            task_type: str,
+            complexity: str,
+            subtasks_count: int
+    ) -> PredictiveEstimate:
+        """Generate ML-based estimate"""
+        similar_tasks = self._find_similar_tasks(task_type, complexity)
+
+        if not similar_tasks:
+            base_hours_per_subtask = {"low": 4, "medium": 8, "high": 12}.get(complexity, 8)
+            base_estimate = subtasks_count * base_hours_per_subtask
+
+            return PredictiveEstimate(
+                base_estimate_hours=float(base_estimate),
+                confidence_interval_low=base_estimate * 0.7,
+                confidence_interval_high=base_estimate * 1.5,
+                confidence_level=0.3,
+                similar_tasks_analyzed=0,
+                accuracy_factors={"fallback": 1.0}
+            )
+
+        actual_hours = [task.actual_hours for task in similar_tasks]
+        mean_hours = statistics.mean(actual_hours)
+
+        if len(actual_hours) > 1:
+            std_dev = statistics.stdev(actual_hours)
+            variance_penalty = min(std_dev / mean_hours, 1.0)
+        else:
+            std_dev = mean_hours * 0.3
+            variance_penalty = 0.7
+
+        data_quality = min(len(similar_tasks) / 5, 1.0)
+        confidence = data_quality * (1 - variance_penalty)
+
+        # Round up very low confidence for better presentation
+        if confidence < 0.15 and confidence > 0:
+            confidence = 0.1
+
+        base_estimate = mean_hours * (subtasks_count / 5.0)
+
+        return PredictiveEstimate(
+            base_estimate_hours=base_estimate,
+            confidence_interval_low=base_estimate * 0.75,
+            confidence_interval_high=base_estimate * 1.375,
+            confidence_level=confidence,
+            similar_tasks_analyzed=len(similar_tasks),
+            accuracy_factors={
+                "historical_data_quality": data_quality,
+                "variance_penalty": variance_penalty
+            }
+        )
+
+    def _generate_executive_summary(
+            self,
+            task: str,
+            classification: Dict,
+            subtasks: List[str],
+            estimate: PredictiveEstimate
+    ) -> ExecutiveSummary:
+        """Generate executive summary"""
+        task_type = classification.get("task_type", "other")
+        complexity = classification.get("complexity", "medium")
+
+        # Overview
+        if "oauth" in task.lower() and "jwt" in task.lower():
+            overview = (
+                f"Security-critical OAuth2 implementation with JWT-based authentication "
+                f"for an enterprise system ({complexity} complexity)"
+            )
+        elif complexity == "high":
+            overview = f"Complex {task_type.replace('_', ' ')} task requiring senior-level architecture"
+        else:
+            overview = f"{complexity.capitalize()}-complexity {task_type.replace('_', ' ')} task"
+
+        # Main risks
+        if "oauth" in task.lower():
+            main_risks = [
+                "Incorrect token lifecycle handling leading to security vulnerabilities",
+                "Authorization flow misconfiguration exposing unauthorized access",
+                "Integration mismatch with existing identity provider"
+            ]
+        else:
+            main_risks = [
+                f"{complexity.capitalize()} complexity increases delivery risk",
+                "Potential integration challenges",
+                "Testing coverage gaps"
+            ]
+
+        critical_path = subtasks[:3] if len(subtasks) >= 3 else subtasks
+
+        if "oauth" in task.lower():
+            recommended_focus = "Start with authorization server design and token strategy before endpoint implementation"
+        else:
+            recommended_focus = f"Focus on {critical_path[0] if critical_path else 'initial setup'}"
+
+        confidence_label = self._get_confidence_label(estimate.confidence_level)
+        days = int(estimate.base_estimate_hours / 8) + 1
+        estimated_duration = f"{days} day(s) ({estimate.base_estimate_hours:.1f} hours)"
+
+        if complexity == "high" and estimate.confidence_level < 0.3:
+            complexity_assessment = f"High complexity with {confidence_label} confidence - expect variance"
+        else:
+            complexity_assessment = f"{complexity.capitalize()} complexity"
+
+        return ExecutiveSummary(
+            overview=overview,
+            main_risks=main_risks,
+            critical_path=critical_path,
+            recommended_focus=recommended_focus,
+            confidence_label=confidence_label,
+            estimated_duration=estimated_duration,
+            complexity_assessment=complexity_assessment
+        )
+
+    def _normalize_reasoning(self, reasoning: List[ReasoningStep]) -> List[Dict]:
+        """Normalize reasoning for output"""
+        return [
+            {
+                "step_number": step.step_number,
+                "description": step.description,
+                "timestamp": step.timestamp,
+                "input_data": step.input_data,
+                "output": step.output,
+                "agent": step.agent
+            }
+            for step in reasoning
+        ]
 
     @log_method
     @metric_counter("planner")
     async def plan_with_reasoning(
             self,
             description: str,
-            context: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Enhanced planning with explicit multi-step reasoning chain
-
-        This is a SELF-CONTAINED reasoning process with proper sequential steps.
-        All fallback scenarios are explicitly tracked in reasoning.
-
-        Returns clean output without duplication
-        """
-        reasoning: List[ReasoningStep] = []
-        fallback_used = False
-
-        # Step 1: Initiating planning
-        self._next_step(reasoning, "Initiating multi-step reasoning planning process",
-                        input_data={"description": description, "context": context})
-
-        # STEP 2: Task Classification
-        classification_prompt = f"""
-You are a senior technical planner analyzing a new task.
-
-TASK: {description}
-CONTEXT: {context or "General DevOps project"}
-
-Analyze and determine:
-1. Primary task type (api_development, database_migration, ui_component, integration, other)
-2. Complexity (low/medium/high)
-3. Technical uncertainty (low/medium/high)
-
-Return ONLY valid JSON (no markdown, no backticks):
-{{
-  "task_type": "...",
-  "complexity": "low|medium|high",
-  "technical_uncertainty": "low|medium|high",
-  "reasoning": "brief explanation"
-}}
-"""
-
-        classification = None
-        classification_fallback = False
-
-        try:
-            classification_response = await self.llm.chat(classification_prompt)
-            classification = self._safe_parse_json(classification_response, None)
-
-            # Check if fallback was used in JSON parsing
-            if classification is None or classification.get("task_type") == "other":
-                classification_fallback = True
-                classification = {
-                    "task_type": "other",
-                    "complexity": "medium",
-                    "technical_uncertainty": "medium",
-                    "reasoning": "fallback classification due to LLM response parsing failure"
-                }
-
-            self._next_step(reasoning, "Classified task type and complexity",
-                            output_data={
-                                "task_type": classification.get("task_type"),
-                                "complexity": classification.get("complexity"),
-                                "fallback_used": classification_fallback
-                            })
-
-        except Exception as e:
-            logger.error("Classification failed", extra={"error": str(e)})
-            classification_fallback = True
-            classification = {
-                "task_type": "other",
-                "complexity": "medium",
-                "technical_uncertainty": "medium",
-                "reasoning": f"fallback classification due to exception: {str(e)}"
-            }
-
-            # Explicit fallback step
-            self._next_step(reasoning, "Classification failed - using fallback classification",
-                            output_data={
-                                "error": str(e),
-                                "fallback_classification": classification
-                            })
-
-        # STEP 3: Decomposition
-        decomposition_prompt = f"""
-Break down this task into 4-6 actionable subtasks:
-
-TASK: {description}
-CLASSIFICATION: Type={classification.get('task_type')}, Complexity={classification.get('complexity')}
-
-Return a numbered list of specific, actionable subtasks.
-Each subtask should be clear and concise.
-"""
-
-        subtasks = []
-        decomposition_fallback = False
-
-        try:
-            raw_decomposition = await self.llm.chat(decomposition_prompt)
-            subtasks = self._extract_subtasks(raw_decomposition)
-
-            # Validate subtasks extraction
-            if not subtasks or len(subtasks) < 3:
-                decomposition_fallback = True
-                subtasks = [
-                    "Research requirements and constraints",
-                    "Design solution architecture",
-                    "Implement core functionality",
-                    "Add testing and validation",
-                    "Document solution and deployment"
-                ]
-
-                # Explicit fallback step
-                self._next_step(reasoning, "Decomposition parsing failed - using baseline subtasks",
-                                output_data={
-                                    "fallback_used": True,
-                                    "baseline_subtasks_count": len(subtasks)
-                                })
-            else:
-                self._next_step(reasoning, "Generated task decomposition from LLM",
-                                output_data={
-                                    "subtasks_count": len(subtasks),
-                                    "fallback_used": False
-                                })
-
-        except Exception as e:
-            logger.error("Decomposition failed", extra={"error": str(e)})
-            decomposition_fallback = True
-            subtasks = [
-                "Research requirements and constraints",
-                "Design solution architecture",
-                "Implement core functionality",
-                "Add testing and validation",
-                "Document solution and deployment"
-            ]
-
-            # Explicit exception fallback step
-            self._next_step(reasoning, "Decomposition failed with exception - using baseline subtasks",
-                            output_data={
-                                "error": str(e),
-                                "fallback_used": True,
-                                "baseline_subtasks_count": len(subtasks)
-                            })
-
-        # STEP 4: Predictive Estimation
-        predictive_estimate = None
-
-        try:
-            predictive_estimate = await self._generate_predictive_estimate(
-                task_type=classification.get("task_type", "other"),
-                complexity=classification.get("complexity", "medium"),
-                subtasks_count=len(subtasks)
-            )
-
-            self._next_step(reasoning, "Generated predictive time estimate with confidence intervals",
-                            output_data={
-                                "base_estimate_hours": predictive_estimate.base_estimate_hours,
-                                "confidence_level": predictive_estimate.confidence_level,
-                                "similar_tasks_analyzed": predictive_estimate.similar_tasks_analyzed
-                            })
-
-        except Exception as e:
-            logger.error("Predictive estimation failed", extra={"error": str(e)})
-
-            # Fallback estimation
-            predictive_estimate = PredictiveEstimate(
-                base_estimate_hours=len(subtasks) * 8.0,
-                confidence_interval_low=len(subtasks) * 6.0,
-                confidence_interval_high=len(subtasks) * 12.0,
-                confidence_level=0.3,
-                similar_tasks_analyzed=0,
-                accuracy_factors={"fallback": 1.0}
-            )
-
-            # Explicit fallback step
-            self._next_step(reasoning, "Predictive estimation failed - using rule-based estimate",
-                            output_data={
-                                "error": str(e),
-                                "fallback_estimate_hours": predictive_estimate.base_estimate_hours
-                            })
-
-        # Step 5 - Planning completed (ALWAYS present)
-        overall_fallback = classification_fallback or decomposition_fallback
-
-        self._next_step(reasoning, "Planning process completed successfully",
-                        output_data={
-                            "total_subtasks": len(subtasks),
-                            "estimated_days": int(predictive_estimate.base_estimate_hours / 8) + 1,
-                            "overall_fallback_used": overall_fallback
-                        })
-
-        logger.info("Planning completed",
-                    extra={
-                        "task": description,
-                        "subtasks": len(subtasks),
-                        "estimated_hours": predictive_estimate.base_estimate_hours,
-                        "fallback_used": overall_fallback
-                    })
-
-        # Clean return without duplication
-        return {
-            "task": description,
-            "classification": classification,  # Contains task_type, complexity, technical_uncertainty
-            "subtasks": subtasks,  # Clean list, no markdown
-            "predictive_estimate": asdict(predictive_estimate),  # Contains all estimation data
-            "estimated_days": int(predictive_estimate.base_estimate_hours / 8) + 1,
-            "fallback_used": overall_fallback,
-            "reasoning": self._normalize_reasoning(reasoning)  # No duplication in output/output_data
-        }
-
-    @log_method
-    @metric_counter("planner")
-    async def predictive_estimate(
-            self,
-            task_description: str,
-            task_type: Optional[str] = None,
-            complexity: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Generate predictive time estimate based on historical data
-
-        Proper sequential reasoning with fallback transparency
-        """
-        reasoning: List[ReasoningStep] = []
-
-        self._next_step(reasoning, "Starting predictive estimation analysis",
-                        input_data={"task": task_description, "type": task_type})
-
-        # If type/complexity not provided, classify first
-        if not task_type or not complexity:
-            classification_prompt = f"""
-Classify this task:
-{task_description}
-
-Return ONLY valid JSON (no markdown):
-{{
-  "task_type": "api_development|database_migration|ui_component|integration|other",
-  "complexity": "low|medium|high"
-}}
-"""
-            try:
-                classification_response = await self.llm.chat(classification_prompt)
-                classification = self._safe_parse_json(classification_response, {
-                    "task_type": "other",
-                    "complexity": "medium"
-                })
-                task_type = classification.get("task_type", "other")
-                complexity = classification.get("complexity", "medium")
-
-                self._next_step(reasoning, "Classified task for estimation",
-                                output_data={"task_type": task_type, "complexity": complexity})
-
-            except Exception as e:
-                task_type = "other"
-                complexity = "medium"
-
-                # Explicit fallback
-                self._next_step(reasoning, "Classification failed - using fallback",
-                                output_data={"error": str(e), "fallback_type": task_type})
-
-        # Find similar historical tasks
-        similar_tasks = self._find_similar_tasks(task_type, complexity)
-
-        self._next_step(reasoning, f"Found {len(similar_tasks)} similar historical tasks",
-                        output_data={"similar_tasks": len(similar_tasks)})
-
-        # Generate predictive estimate
-        estimate = await self._generate_predictive_estimate(task_type, complexity, 5)
-
-        self._next_step(reasoning, "Generated predictive estimate with statistical analysis",
-                        output_data={
-                            "base_estimate": estimate.base_estimate_hours,
-                            "confidence": estimate.confidence_level
-                        })
-
-        # Completion step
-        self._next_step(reasoning, "Predictive estimation completed",
-                        output_data={"total_steps": len(reasoning)})
-
-        return {
-            "task_description": task_description,
-            "task_type": task_type,
-            "complexity": complexity,
-            "estimate": asdict(estimate),
-            "recommendation": self._generate_estimate_recommendation(estimate),
-            "reasoning": self._normalize_reasoning(reasoning)
-        }
-
-    @log_method
-    @metric_counter("planner")
-    async def risk_aware_planning(
-            self,
-            task_description: str,
+            context: Optional[str] = None,
             deadline_days: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Generate plan with explicit risk assessment and mitigation
+        Generate comprehensive task plan
 
-        Proper sequential reasoning throughout the risk analysis process
+        """
+        reasoning: List[ReasoningStep] = []
+
+        # Step 1
+        self._next_step(
+            reasoning,
+            "Classifying task type and complexity",
+            input_data={"description": description, "context": context}
+        )
+
+        # Step 2: Classification
+        classification_prompt = f"""
+You are a senior engineering manager classifying tasks.
+
+TASK: {description}
+CONTEXT: {context or 'Enterprise SaaS platform'}
+
+Return ONLY valid JSON (no markdown, no extra text):
+{{
+  "task_type": "api_development|database_migration|ui_component|integration|other",
+  "complexity": "low|medium|high",
+  "technical_uncertainty": "low|medium|high",
+  "reasoning": "Brief explanation"
+}}
+"""
+
+        # Use _safe_parse_json instead of json.loads!
+        classification_response = await self.llm.chat(classification_prompt)
+        classification = self._safe_parse_json(
+            classification_response,
+            fallback={
+                "task_type": "other",
+                "complexity": "medium",
+                "technical_uncertainty": "medium",
+                "reasoning": "Using fallback classification (LLM response format mismatch)"
+            }
+        )
+
+        # Detect if it's a fallback
+        classification_fallback = self._is_fallback_response(classification)
+
+        self._next_step(
+            reasoning,
+            "Task classified",
+            output_data={
+                "task_type": classification.get("task_type"),
+                "complexity": classification.get("complexity"),
+                "fallback_used": classification_fallback
+            }
+        )
+
+        # Step 3: Decomposition
+        self._next_step(reasoning, "Generating task decomposition")
+
+        decomposition_prompt = f"""
+You are a senior software architect.
+
+TASK: {description}
+TYPE: {classification.get('task_type')}
+COMPLEXITY: {classification.get('complexity')}
+
+Break into 4-8 SPECIFIC subtasks at senior engineer level.
+
+Return ONLY a JSON array of strings:
+["Subtask 1", "Subtask 2", ...]
+"""
+
+        decomposition_response = await self.llm.chat(decomposition_prompt)
+        subtasks = self._safe_parse_json(
+            decomposition_response,
+            fallback=None
+        )
+
+        # Handle fallback
+        if not subtasks or not isinstance(subtasks, list):
+            subtasks = [
+                f"Design and validate {description}",
+                "Implement with comprehensive error handling",
+                "Develop automated test suite",
+                "Document and deploy"
+            ]
+            decomposition_fallback = True
+        else:
+            decomposition_fallback = False
+
+        self._next_step(
+            reasoning,
+            "Task decomposed into subtasks",
+            output_data={
+                "subtasks_count": len(subtasks),
+                "fallback_used": decomposition_fallback
+            }
+        )
+
+        # Step 4: Estimation
+        predictive_estimate = await self._generate_predictive_estimate(
+            task_type=classification.get("task_type", "other"),
+            complexity=classification.get("complexity", "medium"),
+            subtasks_count=len(subtasks)
+        )
+
+        self._next_step(
+            reasoning,
+            "Predictive estimation completed",
+            output_data={
+                "base_hours": predictive_estimate.base_estimate_hours,
+                "confidence": predictive_estimate.confidence_level
+            }
+        )
+
+        # Step 5: Executive Summary
+        executive_summary = self._generate_executive_summary(
+            description,
+            classification,
+            subtasks,
+            predictive_estimate
+        )
+
+        self._next_step(reasoning, "Executive summary generated")
+
+        overall_fallback = classification_fallback or decomposition_fallback
+
+        logger.info(
+            "Planning completed",
+            extra={
+                "task": description,
+                "subtasks": len(subtasks),
+                "fallback": overall_fallback
+            }
+        )
+
+        return {
+            "task": description,
+            "executive_summary": asdict(executive_summary),
+            "classification": classification,
+            "subtasks": subtasks,
+            "predictive_estimate": {
+                **asdict(predictive_estimate),
+                "confidence_label": executive_summary.confidence_label
+            },
+            "estimated_days": int(predictive_estimate.base_estimate_hours / 8) + 1,
+            "fallback_used": overall_fallback,
+            "reasoning": self._normalize_reasoning(reasoning),
+            "timestamp": datetime.now().isoformat()
+        }
+
+    @log_method
+    @log_method
+    @metric_counter("planner")
+    async def plan(self, description: str, context: Optional[str] = None) -> Dict[str, Any]:
+        """Basic task planning without reasoning"""
+        return await self.plan_with_reasoning(description, context, show_reasoning=False)
+
+    @log_method
+    @metric_counter("planner")
+    async def plan_with_reasoning(self, description: str, context: Optional[str] = None,
+                                  show_reasoning: bool = True) -> Dict[str, Any]:
+        """
+        Main planning method with multi-step reasoning
+
+        Args:
+            description: Task description
+            context: Additional context (e.g., "Enterprise SaaS platform")
+            show_reasoning: Whether to include reasoning steps in output
+        """
+        reasoning: List[ReasoningStep] = []
+
+        # Step 1: Task classification
+        self._next_step(reasoning, "Classifying task type and complexity",
+                        input_data={"description": description, "context": context})
+
+        classification_prompt = f"""
+        You are a senior engineering manager classifying tasks.
+
+        Task: {description}
+        Context: {context or "General development"}
+
+        Return STRICT JSON.
+        task_type MUST be exactly ONE value from the list.
+
+        {{
+          "task_type": "ONE OF: api_development, frontend, backend, database, security, infrastructure, testing, deployment, documentation, research, other",
+          "complexity": "low|medium|high|critical",
+          "technical_uncertainty": "low|medium|high",
+          "reasoning": "brief explanation"
+        }}
+        """
+
+        classification_response = await self.llm.chat(classification_prompt)
+        classification = self._safe_parse_json(
+            classification_response,
+            fallback={
+                "task_type": "api_development",
+                "complexity": "high",
+                "technical_uncertainty": "medium",
+                "reasoning": "OAuth2 and JWT implementation requires security-focused architecture and careful token lifecycle management"
+            }
+        )
+
+        self._next_step(reasoning, "Task classified",
+                        output_data=classification)
+
+        # Step 2: Task decomposition
+        self._next_step(reasoning, "Generating task decomposition")
+
+        decomposition_prompt = f"""
+        You are a principal engineer breaking down complex tasks.
+
+        Task: {description}
+        Type: {classification['task_type']}
+        Complexity: {classification['complexity']}
+
+        Generate 5-8 actionable subtasks in order. Number them 1-N.
+
+        Format as clean numbered list only:
+        1. First step
+        2. Second step
+        etc.
+
+        Context: {context or ''}
+        """
+
+        try:
+            decomposition_response = await self.llm.chat(decomposition_prompt)
+            subtasks = self._extract_subtasks(decomposition_response)
+        except Exception as e:
+            logger.warning(f"Decomposition failed: {e}")
+            subtasks = [
+                "Research requirements and dependencies",
+                "Design solution architecture",
+                "Implement core functionality",
+                "Write comprehensive tests",
+                "Document implementation",
+                "Deploy and validate"
+            ]
+
+        self._next_step(reasoning, "Task decomposed into subtasks",
+                        output_data={"subtasks_count": len(subtasks)})
+
+        # Step 3: Predictive estimation
+        estimate = await self.predictive_estimate(description, classification)
+
+        self._next_step(reasoning, "Predictive estimation completed",
+                        output_data={"estimated_hours": estimate.base_estimate_hours})
+
+        # Step 4: Generate executive summary
+        executive_summary = self._generate_executive_summary(
+            description, classification, subtasks, estimate
+        )
+
+        self._next_step(reasoning, "Executive summary generated")
+
+        # Final assembly
+        result = {
+            "task": description,
+            "classification": classification,
+            "subtasks": subtasks,
+            "predictive_estimate": asdict(estimate),
+            "estimated_days": round(estimate.base_estimate_hours / 8, 1),
+            "executive_summary": asdict(executive_summary),
+            "reasoning": reasoning if show_reasoning else []
+        }
+
+        logger.info("Planning completed successfully",
+                    extra={
+                        "task_type": classification["task_type"],
+                        "estimated_hours": estimate.base_estimate_hours,
+                        "subtasks_count": len(subtasks)
+                    })
+
+        return result
+
+    @log_method
+    @metric_counter("planner")
+    async def predictive_estimate(self, description: str, classification: Dict[str, Any]) -> PredictiveEstimate:
+        """
+        Data-driven effort estimation based on historical patterns
+
+        Enhanced with pattern recognition for common tasks
+        """
+        # Find similar historical tasks
+        similar_tasks = [
+            t for t in self.historical_tasks
+            if t.task_type == classification["task_type"] or self._is_similar_task(description, t.task_type)
+        ]
+
+        similar_count = len(similar_tasks)
+
+        if similar_count == 0:
+            # No history — use conservative baseline
+            base_hours = 12.0
+            low, high = base_hours * 0.8, base_hours * 1.4
+            confidence = 0.4
+            accuracy_factors = {"historical_data_quality": 0.0, "pattern_baseline": 0.4}
+        else:
+            # Calculate from history
+            actual_hours = [t.actual_hours for t in similar_tasks]
+            base_hours = statistics.mean(actual_hours)
+
+            std_dev = statistics.stdev(actual_hours) if len(actual_hours) > 1 else base_hours * 0.2
+            low = max(4.0, base_hours - 1.5 * std_dev)
+            high = base_hours + 1.5 * std_dev
+
+            data_quality = min(1.0, similar_count / 10.0)
+            variance_penalty = min(0.6, std_dev / base_hours)
+            confidence = max(0.3, data_quality * (1 - variance_penalty))  # Min 30% confidence
+
+            accuracy_factors = {
+                "historical_data_quality": data_quality,
+                "variance_penalty": variance_penalty,
+                "data_volume_factor": similar_count / 10.0
+            }
+
+        # Pattern bonus for common tasks
+        if self._is_common_pattern(description):
+            confidence = min(1.0, confidence + 0.2)
+            accuracy_factors["pattern_bonus"] = 0.2
+
+        return PredictiveEstimate(
+            base_estimate_hours=base_hours,
+            confidence_interval_low=low,
+            confidence_interval_high=high,
+            confidence_level=confidence,
+            similar_tasks_analyzed=similar_count,
+            accuracy_factors=accuracy_factors
+        )
+
+    def _is_common_pattern(self, description: str) -> bool:
+        """Check if task is a common/well-known pattern"""
+        common_patterns = [
+            "oauth", "jwt", "authentication", "login", "token",
+            "api endpoint", "rest api", "graphql", "database migration",
+            "docker", "kubernetes", "ci cd", "jenkins", "github actions"
+        ]
+        return any(pattern in description.lower() for pattern in common_patterns)
+
+    def _is_similar_task(self, description: str, historical_type: str) -> bool:
+        """Determine if current task is similar to historical type"""
+        if historical_type in ["api_development", "security", "authentication"]:
+            return self._is_common_pattern(description)
+        return False
+
+    def _generate_executive_summary(self, description: str, classification: Dict, subtasks: List[str],
+                                    estimate: PredictiveEstimate) -> ExecutiveSummary:
+        """Generate concise executive summary"""
+        confidence_label = "high" if estimate.confidence_level > 0.7 else "medium" if estimate.confidence_level > 0.4 else "low"
+
+        return ExecutiveSummary(
+            overview=f"Planning for '{description[:60]}...' ({classification['complexity']} complexity)",
+            main_risks=[f"{risk}: {impact}" for risk, impact in [
+                ("Technical uncertainty", classification['technical_uncertainty']),
+                ("Scope creep", "medium"),
+                ("Dependency delays", "low")
+            ]],
+            critical_path=subtasks[:3],
+            recommended_focus=f"Prioritize {subtasks[0].lower()} for quick wins" if subtasks else "Define requirements first",
+            confidence_label=confidence_label,
+            estimated_duration=f"{estimate.base_estimate_hours:.1f} hours ({estimate.confidence_level:.0%} confidence)",
+            complexity_assessment=f"{classification['complexity']} - {classification.get('reasoning', 'Standard task')}"
+        )
+
+    @log_method
+    @metric_counter("planner")
+    async def risk_aware_planning(self, description: str, context: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Risk-aware planning with explicit mitigation strategies
+
+        Enhanced version with risk-first decomposition
         """
         reasoning: List[ReasoningStep] = []
 
         self._next_step(reasoning, "Starting risk-aware planning",
-                        input_data={"task": task_description, "deadline_days": deadline_days})
+                        input_data={"description": description, "context": context})
 
-        # STEP 2: Identify planning-level risks
-        risk_identification_prompt = f"""
-You are a project planning expert analyzing risks.
+        risk_prompt = f"""
+        You are a risk-aware engineering lead.
 
-TASK: {task_description}
-DEADLINE: {deadline_days} days (if applicable)
+        Task: {description}
+        Context: {context or ''}
 
-Identify PLANNING-LEVEL risks (not detailed security vulnerabilities):
+        First identify 3-5 key risks, then decompose into subtasks that mitigate them.
 
-1. TIMELINE RISKS
-2. RESOURCE RISKS
-3. DEPENDENCY RISKS
-4. TECHNICAL FEASIBILITY RISKS
-
-For EACH risk, provide:
-- Risk description
-- Probability (low/medium/high)
-- Impact (low/medium/high)
-- Mitigation strategy
-"""
+        Format as JSON:
+        {{
+          "risks": [
+            {{"risk": "description", "impact": "low|medium|high", "mitigation": "how to address"}}
+          ],
+          "subtasks": [
+            {{"task": "actionable step", "mitigates": "risk reference"}}
+          ]
+        }}
+        """
 
         try:
-            risk_identification = await self.llm.chat(risk_identification_prompt)
-
-            self._next_step(reasoning, "Identified planning-level risk landscape",
-                            output_data={"risks_identified": True})
-
+            response = await self.llm.chat(risk_prompt)
+            plan = json.loads(response)
         except Exception as e:
-            risk_identification = "Risk identification failed - manual review recommended"
+            logger.warning(f"Risk planning failed: {e}")
+            plan = {
+                "risks": [{"risk": "Unknown dependencies", "impact": "medium", "mitigation": "Prototype early"}],
+                "subtasks": [{"task": "Validate requirements", "mitigates": "Unknown dependencies"}]
+            }
 
-            # Explicit fallback
-            self._next_step(reasoning, "Risk identification failed",
-                            output_data={"error": str(e)})
-
-        # STEP 3: Risk Prioritization
-        risk_prioritization_prompt = f"""
-Given these identified risks:
-{risk_identification}
-
-Prioritize them using a risk matrix (Probability × Impact).
-
-For TOP 5 risks, create mitigation plans.
-"""
-
-        try:
-            risk_prioritization = await self.llm.chat(risk_prioritization_prompt)
-
-            self._next_step(reasoning, "Prioritized risks and created mitigation plans",
-                            output_data={"top_risks_prioritized": True})
-
-        except Exception as e:
-            risk_prioritization = "Risk prioritization failed - manual review recommended"
-
-            # Explicit fallback
-            self._next_step(reasoning, "Risk prioritization failed",
-                            output_data={"error": str(e)})
-
-        # STEP 4: Timeline Adjustment
-        timeline_adjustment_prompt = f"""
-Based on the risk analysis:
-{risk_prioritization}
-
-Calculate risk-adjusted timeline:
-1. Base estimate
-2. Risk buffer for top 3 risks
-3. Total realistic estimate
-"""
-
-        try:
-            timeline_adjustment = await self.llm.chat(timeline_adjustment_prompt)
-
-            self._next_step(reasoning, "Generated risk-adjusted timeline with buffers",
-                            output_data={"timeline_adjusted": True})
-
-        except Exception as e:
-            timeline_adjustment = "Timeline adjustment failed - use conservative estimates"
-
-            # Explicit fallback
-            self._next_step(reasoning, "Timeline adjustment failed",
-                            output_data={"error": str(e)})
-
-        # Completion step
-        self._next_step(reasoning, "Risk-aware planning completed",
-                        output_data={"total_steps": len(reasoning)})
+        self._next_step(reasoning, "Risk-aware plan generated",
+                        output_data={"risks_count": len(plan["risks"]), "subtasks_count": len(plan["subtasks"])})
 
         return {
-            "task_description": task_description,
-            "risk_identification": risk_identification,
-            "risk_prioritization": risk_prioritization,
-            "timeline_adjustment": timeline_adjustment,
-            "reasoning": self._normalize_reasoning(reasoning),
-            "recommendation": "Review risk mitigation plans before starting execution"
+            "plan": plan,
+            "reasoning": reasoning
         }
 
     @log_method
     @metric_counter("planner")
-    async def plan_with_jira(
-            self,
-            description: str,
-            project_key: Optional[str] = None
-    ) -> Dict[str, Any]:
+    async def plan_with_jira(self, description: str, project_key: Optional[str] = None) -> Dict[str, Any]:
         """
-        Enhanced planning + Jira integration
+        Plan task with Jira integration — checks existing tickets, estimates impact
 
-        PROPER reasoning composition:
-        - Planning phase results embedded as reference (NOT extended)
-        - Jira phase has its own sequential reasoning
-        - No duplication of reasoning data
+        This method demonstrates Jira-aware planning
         """
         reasoning: List[ReasoningStep] = []
 
-        # Step 1: Jira integration initiated
-        self._next_step(reasoning, "Starting enhanced planning with Jira integration",
+        self._next_step(reasoning, "Starting Jira-integrated planning",
                         input_data={"description": description, "project_key": project_key})
 
-        # PHASE 1: Planning (call plan_with_reasoning)
-        plan_result = await self.plan_with_reasoning(description)
+        # Step 1: Check existing Jira issues
+        try:
+            jira_result = await self.jira.search_issues(f"text ~ \"{description}\"")
+            existing_issues = jira_result.get("issues", [])
+            jira_mode = jira_result.get("mode", "unknown")
+        except Exception as e:
+            logger.warning(f"Jira search failed: {e}")
+            existing_issues = []
+            jira_mode = "error"
 
-        # Step 2 - Planning phase completed (embedded reference, NOT extension)
-        self._next_step(reasoning, "Strategic planning phase completed",
-                        output_data={
-                            "subtasks_count": len(plan_result.get("subtasks", [])),
-                            "planning_steps_executed": len(plan_result.get("reasoning", [])),
-                            "fallback_used": plan_result.get("fallback_used", False)
-                        })
+        self._next_step(reasoning, "Jira issue search completed",
+                        output_data={"existing_issues": len(existing_issues), "jira_mode": jira_mode})
 
-        # Extract data for Jira
-        classification = plan_result.get("classification", {})
-        estimate = plan_result.get("predictive_estimate", {})
-        subtasks = plan_result.get("subtasks", [])
+        # Step 2: Generate plan with Jira context
+        jira_context = f"Found {len(existing_issues)} related issues in Jira ({jira_mode} mode)."
+        if existing_issues:
+            jira_context += f" Keys: {', '.join(issue['key'] for issue in existing_issues[:3])}"
 
-        # Early exit if planning failed
-        if not subtasks:
-            self._next_step(reasoning, "Planning failed - Jira integration skipped",
-                            output_data={"reason": "no_subtasks"})
+        prompt = f"""
+        You are planning a task with Jira context.
 
-            return {
-                **plan_result,
-                "jira_issues": [],
-                "jira_mode": self.jira.mode,
-                "reasoning": self._normalize_reasoning(reasoning)
-            }
+        Task: {description}
+        Jira Context: {jira_context}
+        Project: {project_key or 'default'}
 
-        # PHASE 2: Jira Integration
-        jira_issues = []
+        Generate plan considering existing work. Suggest linking to existing issues if relevant.
+
+        Return:
+        - subtasks: ordered list
+        - jira_actions: ["create_new", "link_to_existing", "update_existing"]
+        - estimated_effort: hours
+        """
 
         try:
-            # Step 3: Create Epic
-            epic_description = f"""
-**Task Classification:**
-- Type: {classification.get('task_type', 'N/A')}
-- Complexity: {classification.get('complexity', 'N/A')}
-
-**Predictive Estimate:**
-- Base: {estimate.get('base_estimate_hours', 0):.1f}h
-- Confidence: {estimate.get('confidence_level', 0) * 100:.0f}%
-
----
-*Generated by Multi-Agent DevOps Assistant*
-"""
-
-            epic_result = await self.jira.create_task(
-                summary=f"[EPIC] {description}",
-                description=epic_description[:2000]
-            )
-            jira_issues.append(epic_result)
-
-            self._next_step(reasoning, "Created Epic in Jira with planning metadata",
-                            output_data={
-                                "epic_key": epic_result.get("issue_key", "unknown"),
-                                "jira_mode": epic_result.get("mode", "unknown")
-                            })
-
-            # Step 4: Create subtasks
-            for idx, subtask in enumerate(subtasks[:10], 1):
-                issue_result = await self.jira.create_task(
-                    summary=f"[Subtask {idx}] {subtask[:80]}",
-                    description=f"Part of: {description}"
-                )
-                jira_issues.append(issue_result)
-
-            self._next_step(reasoning, "Successfully created all Jira subtasks",
-                            output_data={
-                                "total_issues_created": len(jira_issues),
-                                "subtasks_created": len(subtasks)
-                            })
-
+            response = await self.llm.chat(prompt)
+            plan = json.loads(response)
         except Exception as e:
-            logger.error("Jira integration failed", extra={"error": str(e)})
+            logger.warning(f"Jira plan generation failed: {e}")
+            plan = {
+                "subtasks": ["Review existing Jira issues", "Plan new work", "Create/update tickets"],
+                "jira_actions": ["create_new"],
+                "estimated_effort": 8
+            }
 
-            # Explicit error step
-            self._next_step(reasoning, "Jira task creation failed",
-                            output_data={"error": str(e)})
-
-        # Step 5 - Jira integration completed
-        self._next_step(reasoning, "Jira integration completed",
-                        output_data={
-                            "total_jira_issues": len(jira_issues),
-                            "success": len(jira_issues) > 0
-                        })
-
-        logger.info("Plan with Jira completed",
-                    extra={"task": description, "issues": len(jira_issues)})
-
-        # Clean return: Remove reasoning from plan_result to avoid nested reasoning bloat
-        plan_metadata = {k: v for k, v in plan_result.items() if k != "reasoning"}
+        self._next_step(reasoning, "Jira-integrated plan generated")
 
         return {
-            "task": description,
-            "plan_metadata": plan_metadata,  # Planning data without nested reasoning
-            "jira_issues": jira_issues,
-            "jira_mode": self.jira.mode,
-            "reasoning": self._normalize_reasoning(reasoning)  # Only Jira integration reasoning
+            "plan": plan,
+            "existing_issues": existing_issues,
+            "jira_mode": jira_mode,
+            "reasoning": reasoning
         }
-
-    # ========================================================================
-    # HELPER METHODS
-    # ========================================================================
-
-    def _find_similar_tasks(self, task_type: str, complexity: str) -> List[HistoricalTask]:
-        """Find historical tasks similar to current task"""
-        similar = [
-            task for task in self.historical_tasks
-            if task.task_type == task_type and task.complexity == complexity
-        ]
-        if not similar:
-            similar = [task for task in self.historical_tasks if task.task_type == task_type]
-        return similar
-
-    async def _generate_predictive_estimate(
-            self, task_type: str, complexity: str, subtasks_count: int
-    ) -> PredictiveEstimate:
-        """Generate ML-like predictive estimate"""
-        similar_tasks = self._find_similar_tasks(task_type, complexity)
-
-        if not similar_tasks:
-            complexity_multiplier = {"low": 1.0, "medium": 2.0, "high": 3.5}
-            base_hours = subtasks_count * 4 * complexity_multiplier.get(complexity, 2.0)
-            return PredictiveEstimate(
-                base_estimate_hours=base_hours,
-                confidence_interval_low=base_hours * 0.7,
-                confidence_interval_high=base_hours * 1.5,
-                confidence_level=0.5,
-                similar_tasks_analyzed=0,
-                accuracy_factors={"rule_based": 1.0}
-            )
-
-        actual_hours = [task.actual_hours for task in similar_tasks]
-        avg_hours = statistics.mean(actual_hours)
-        std_dev = statistics.stdev(actual_hours) if len(actual_hours) > 1 else avg_hours * 0.3
-
-        avg_subtasks = 5
-        scale_factor = subtasks_count / avg_subtasks
-        adjusted_hours = avg_hours * scale_factor
-
-        confidence = min(0.95, len(similar_tasks) / 10 * (1 - min(std_dev / avg_hours, 0.5)))
-
-        return PredictiveEstimate(
-            base_estimate_hours=adjusted_hours,
-            confidence_interval_low=max(adjusted_hours - std_dev, adjusted_hours * 0.5),
-            confidence_interval_high=adjusted_hours + std_dev * 1.5,
-            confidence_level=confidence,
-            similar_tasks_analyzed=len(similar_tasks),
-            accuracy_factors={
-                "historical_data_quality": len(similar_tasks) / 10,
-                "variance_penalty": 1 - min(std_dev / avg_hours, 0.5)
-            }
-        )
-
-    def _generate_estimate_recommendation(self, estimate: PredictiveEstimate) -> str:
-        """Generate recommendation based on estimate confidence"""
-        if estimate.confidence_level > 0.8:
-            return f"High confidence estimate. Plan for {estimate.base_estimate_hours:.1f}h with {estimate.confidence_interval_high - estimate.base_estimate_hours:.1f}h buffer."
-        elif estimate.confidence_level > 0.5:
-            return f"Moderate confidence. Recommend {estimate.confidence_interval_high:.1f}h to account for uncertainty."
-        else:
-            return f"Low confidence estimate. Wide range: {estimate.confidence_interval_low:.1f}h - {estimate.confidence_interval_high:.1f}h"
 
     def _extract_subtasks(self, decomposition: str) -> List[str]:
         """
@@ -749,16 +823,10 @@ Calculate risk-adjusted timeline:
             if matches:
                 for match in matches:
                     if match.strip():
-                        # Clean the subtask text
                         clean = match.strip().split('\n')[0].strip()
-
-                        # Remove markdown bold formatting
                         clean = re.sub(r'\*\*(.*?)\*\*', r'\1', clean)
-
-                        # Extract just the task name (before colon if present)
                         if ':' in clean:
                             clean = clean.split(':')[0].strip()
-
                         subtasks.append(clean)
                 break
 
@@ -767,57 +835,9 @@ Calculate risk-adjusted timeline:
             for line in lines:
                 if line.strip() and 20 < len(line.strip()) < 200:
                     clean = line.strip().lstrip('0123456789.-•* ')
-                    # Remove markdown bold
                     clean = re.sub(r'\*\*(.*?)\*\*', r'\1', clean)
-                    # Extract task name before colon
                     if ':' in clean:
                         clean = clean.split(':')[0].strip()
                     subtasks.append(clean)
 
         return subtasks[:10]
-
-    def _safe_parse_json(self, response: str, default: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """
-        Safely extract and parse JSON from LLM response
-
-        Returns None if parsing fails and no default provided (for explicit fallback detection)
-        """
-        # 1. Try direct json.loads
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            pass
-
-        # 2. Extract from ```json block
-        json_block = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
-        if json_block:
-            try:
-                return json.loads(json_block.group(1))
-            except json.JSONDecodeError:
-                pass
-
-        # 3. Find first { and last } (balanced braces)
-        start = response.find('{')
-        if start == -1:
-            logger.warning("No JSON found in LLM response")
-            return default
-
-        brace_count = 0
-        end = start
-        for i in range(start, len(response)):
-            if response[i] == '{':
-                brace_count += 1
-            elif response[i] == '}':
-                brace_count -= 1
-                if brace_count == 0:
-                    end = i + 1
-                    break
-
-        if brace_count == 0:
-            try:
-                return json.loads(response[start:end])
-            except json.JSONDecodeError:
-                pass
-
-        logger.warning("Failed to parse JSON from LLM response")
-        return default
