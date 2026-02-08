@@ -182,26 +182,21 @@ class CodeExecutionAgent(MCPAgent):
         if tests_total == 0:
             return 0.0, False, 0.0
 
-        # Pass rate
         pass_rate = tests_passed / tests_total
 
         # Performance penalty (simplified)
         perf_score = 1.0 if execution_time_ms < 1000 else 0.8
 
-        # Code size check (not too short, not too long)
         size_score = 1.0 if 20 <= code_length <= 1000 else 0.7
 
-        # Overall quality
         quality_score = (pass_rate * 0.7) + (perf_score * 0.2) + (size_score * 0.1)
 
-        # Production readiness decision
         production_ready = (
                 tests_passed == tests_total and
                 execution_time_ms < 5000 and
                 code_length >= 10
         )
 
-        # Confidence based on test coverage
         confidence = min(pass_rate + (tests_total / 10 * 0.1), 1.0)
 
         return quality_score, production_ready, confidence
@@ -317,7 +312,7 @@ class CodeExecutionAgent(MCPAgent):
         reasoning: List[ReasoningStep] = []
         session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-        # ✅ CRITICAL FIX: Use output_data (not output!)
+        # Use output_data
         reasoning.append(ReasoningStep(
             step_number=1,
             description="STRATEGIC: Planning code generation",
