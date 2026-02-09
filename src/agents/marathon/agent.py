@@ -593,7 +593,6 @@ Return as JSON:
             output_data={"task_id": task_id}
         ))
 
-        # Optionally start autonomous loop
         if auto_start_loop:
             asyncio.create_task(self._autonomous_execution_loop(task_id))
             reasoning.append(ReasoningStep(
@@ -637,7 +636,6 @@ Return as JSON:
             input_data={"current_progress": thought_sig.progress_percentage}
         ))
 
-        # Get current sub-goal
         if thought_sig.current_sub_goal_idx >= len(thought_sig.sub_goals):
             # All goals done
             thought_sig.current_state = TaskState.COMPLETED

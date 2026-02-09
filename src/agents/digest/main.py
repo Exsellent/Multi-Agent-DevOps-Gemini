@@ -12,6 +12,8 @@ async def root():
         "available_tools": list(agent.tools.keys()),
         "docs": "/docs"
     }
+
+
 if __name__ == "__main__":
     import uvicorn
 

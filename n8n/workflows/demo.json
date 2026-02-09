@@ -183,18 +183,20 @@
     },
     {
       "parameters": {
-    "url": "http://health_monitor:8306/mcp",
-    "method": "POST",
-    "sendBody": true,
-    "specifyBody": "json",
-    "jsonBody": "{ \"method\": \"get_metrics\", \"params\": {} }"
-  },
-  "id": "12",
-  "name": "Metrics Agent",
-  "type": "n8n-nodes-base.httpRequest",
-  "typeVersion": 4.1,
-  "position": [2220, 300]
-
+        "url": "http://health_monitor:8306/mcp",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"method\": \"get_metrics\", \"params\": {} }"
+      },
+      "id": "12",
+      "name": "Metrics Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2220,
+        300
+      ]
     }
   ],
   "connections": {

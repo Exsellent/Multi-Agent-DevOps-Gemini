@@ -144,7 +144,6 @@ class DigestAgent(MCPAgent):
             "high", "strong", "eager", "successful", "celebrated"
         ])
 
-        # Calculate confidence
         confidence = 0.5  # Base confidence
 
         if self.MIN_WORD_COUNT <= word_count <= self.MAX_WORD_COUNT:
@@ -158,7 +157,6 @@ class DigestAgent(MCPAgent):
         if tone_positive:
             confidence += 0.05
 
-        # Determine quality state
         quality_state = self._determine_quality_state(confidence, has_achievements, has_mood)
 
         return DigestValidation(
@@ -214,21 +212,21 @@ class DigestAgent(MCPAgent):
         for line in lines:
             line_lower = line.lower()
 
-            # Enhanced achievement detection
+            # achievement detection
             if any(keyword in line_lower for keyword in [
                 "achieve", "complete", "deliver", "success", "milestone",
                 "accomplished", "validated", "integration", "celebrate"
             ]):
                 current_section = "achievements"
 
-            # Enhanced blocker detection
+            # blocker detection
             elif any(keyword in line_lower for keyword in [
                 "blocker", "issue", "challenge", "delay", "minor",
                 "compatibility", "experiencing", "identified"
             ]):
                 current_section = "blockers"
 
-            # Enhanced mood detection with more keywords
+            # mood detection with more keywords
             elif any(keyword in line_lower for keyword in [
                 "mood", "morale", "atmosphere", "spirit", "team morale",
                 "overall", "motivated", "collaborative", "dedication"
@@ -390,7 +388,7 @@ Overall, team morale remains high. The atmosphere is collaborative and motivated
         return {
             "date": date,
             "summary": digest,
-            "sections": sections,  # Structured data
+            "sections": sections,
             "validation": asdict(validation),
             "quality_state": validation.quality_state,
             "fallback_used": llm_fallback,

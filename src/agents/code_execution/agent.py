@@ -84,7 +84,7 @@ class VerificationArtifact:
     code_length: int
 
     # Quality metrics (agent-decided, not LLM-decided)
-    quality_score: float  # 0.0 - 1.0
+    quality_score: float
     production_ready: bool
     confidence: float
 
@@ -100,7 +100,7 @@ class TestSuite:
     suite_id: str
     tests: List[ExecutableTest]
     created_at: str
-    code_hash: str  # Hash of code this suite was created for
+    code_hash: str
 
 
 @dataclass
@@ -146,7 +146,6 @@ class CodeExecutionAgent(MCPAgent):
         super().__init__("Code-Execution")
         self.llm = LLMClient()
 
-        # Only Python for hackathon (honest scope)
         self.supported_language = "python"
 
         # Store test suites for consistency
@@ -412,7 +411,7 @@ Output test code in ```python block."""
             test_id = f"test_{i + 1}"
             tests.append(ExecutableTest(
                 test_id=test_id,
-                test_code=test_code,  # Include all test code
+                test_code=test_code,
                 description=f"Test function: {test_match[:50]}",
                 expected_behavior="Should pass all assertions"
             ))
@@ -488,7 +487,7 @@ print("PASSED: basic_test")
                 "test_id": test.test_id,
                 "passed": passed,
                 "execution_time_ms": test.execution_time_ms,
-                "output": test.stdout[:200]  # First 200 chars
+                "output": test.stdout[:200]
             })
 
         reasoning.append(ReasoningStep(
@@ -509,7 +508,6 @@ print("PASSED: basic_test")
             code_length=len(generated_code)
         )
 
-        # Create verification artifact
         artifact = VerificationArtifact(
             artifact_id=f"artifact_{session_id}",
             artifact_type="test_report",
@@ -725,7 +723,6 @@ Output fixed code in ```python block."""
                     "execution_time_ms": test_exec["execution_time_ms"]
                 })
 
-            # Calculate quality
             quality_score, production_ready, confidence = self._calculate_quality_score(
                 tests_passed=tests_passed,
                 tests_total=len(test_suite.tests),
@@ -733,7 +730,6 @@ Output fixed code in ```python block."""
                 code_length=len(fixed_code)
             )
 
-            # Create artifact
             artifact = VerificationArtifact(
                 artifact_id=f"artifact_{session_id}_iter{current_iteration_num}",
                 artifact_type="debug_report",
@@ -752,7 +748,6 @@ Output fixed code in ```python block."""
                 confidence=confidence
             )
 
-            # Store iteration
             new_iteration = CodeIteration(
                 iteration_number=current_iteration_num,
                 timestamp=datetime.now().isoformat(),

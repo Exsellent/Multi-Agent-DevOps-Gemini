@@ -180,7 +180,6 @@ class ArchitectureIntelligenceAgent(MCPAgent):
             f"Current working directory: {Path.cwd()}"
         )
 
-
     def _load_and_encode_image(self, file_path: str) -> str:
         try:
             img_path = self._resolve_local_image_path(file_path)  # ← now exists
@@ -227,7 +226,7 @@ class ArchitectureIntelligenceAgent(MCPAgent):
             # Verify it's a valid image
             try:
                 img = Image.open(io.BytesIO(image_data))
-                img.verify()  # Verify image integrity
+                img.verify()
 
                 # Re-open for processing (verify closes the file)
                 img = Image.open(io.BytesIO(image_data))
@@ -292,7 +291,6 @@ class ArchitectureIntelligenceAgent(MCPAgent):
         prioritized = []
 
         for risk in risks:
-            # Calculate blast radius estimate
             blast_radius = len(risk.affected_flows)
             mitigation_exists = bool(risk.mitigation and len(risk.mitigation) > 10)
 
@@ -303,7 +301,6 @@ class ArchitectureIntelligenceAgent(MCPAgent):
                 mitigation_exists=mitigation_exists
             )
 
-            # Record decision process
             decision = DecisionRecord(
                 decision_type="risk_prioritization",
                 input_factors={
@@ -389,7 +386,7 @@ class ArchitectureIntelligenceAgent(MCPAgent):
                 # Try to extract file path from context if present
                 if context and ('/' in context or '\\' in context or context.endswith(
                         ('.png', '.jpg', '.jpeg', '.gif', '.webp'))):
-                    # Extract potential file path from context
+
                     potential_paths = [word for word in context.split() if
                                        '/' in word or word.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))]
                     if potential_paths:
@@ -694,14 +691,12 @@ Be specific. Every risk needs evidence.
         # PHASE 5: SYSTEM STATE UPDATE (Agent memory)
         # =================================================================
 
-        # Calculate overall confidence
         overall_confidence = (
                 spatial_confidence * 0.4 +
                 temporal_confidence * 0.3 +
                 failure_confidence * 0.3
         )
 
-        # Create system state
         from datetime import datetime
         self._system_state = SystemState(
             architecture_hash=self._compute_architecture_hash(spatial_analysis),
@@ -749,7 +744,6 @@ Be specific. Every risk needs evidence.
                 for risk, score, decision in prioritized_risks
             ],
 
-            # Metadata
             "confidence_scores": {
                 "spatial": spatial_confidence,
                 "temporal": temporal_confidence,
@@ -782,7 +776,7 @@ Be specific. Every risk needs evidence.
         ))
 
         try:
-            # Load and encode image
+
             image_base64 = self._load_and_encode_image(file_path)
 
             reasoning.append(ReasoningStep(
@@ -940,7 +934,6 @@ Be specific with numbers and implementation details.
             elif '/' in image_base64 or '\\' in image_base64:
                 is_file_path = True
 
-        # If it's a file path, load it
         if is_file_path:
             try:
                 logger.info(f"Detected file path input: {image_base64}")
@@ -955,7 +948,7 @@ Be specific with numbers and implementation details.
                     )]
                 }
         else:
-            # Validate and prepare base64
+
             try:
                 image_base64 = self._validate_and_prepare_base64(image_base64)
             except ValueError as e:

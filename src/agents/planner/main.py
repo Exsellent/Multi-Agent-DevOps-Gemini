@@ -13,6 +13,7 @@ async def root():
         "docs": "/docs"
     }
 
+
 if __name__ == "__main__":
     import uvicorn
 

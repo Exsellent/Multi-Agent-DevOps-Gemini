@@ -84,7 +84,6 @@ class GeminiVisionProvider:
         """
         mime_type, cleaned_b64 = prepare_image_for_gemini(image_base64)
 
-
         data_uri = f"data:{mime_type};base64,{cleaned_b64}"
 
         payload = {
@@ -155,7 +154,6 @@ class GeminiVisionProvider:
                     response.raise_for_status()
 
                 data = response.json()
-
 
                 if "choices" in data and len(data["choices"]) > 0:
                     message = data["choices"][0].get("message", {})
