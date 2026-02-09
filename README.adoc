@@ -1,4 +1,4 @@
-= Multi-Agent DevOps
+= Multi-Agent DevOps Gemini
 
 :toc:
 :toclevels: 3

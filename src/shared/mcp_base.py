@@ -2,6 +2,7 @@ import inspect
 import json
 import logging
 import os
+from dataclasses import is_dataclass, asdict
 from typing import Any, Dict
 
 from fastapi import FastAPI, Request
@@ -14,32 +15,55 @@ logging.basicConfig(
 )
 
 
+def finalize_output(obj: Any, agent_name: str) -> Any:
+    """
+    Recursively clean and normalize output for MCP/UI compatibility:
+    - Convert Pydantic models using .model_dump(exclude_none=True)
+    - Convert dataclasses using asdict
+    - Remove all None/null values
+    - Rename output_data → output if present
+    - Add agent name if missing
+    - Handle lists and nested structures
+    """
+    # 1. Convert Pydantic model → dict (exclude None)
+    if isinstance(obj, BaseModel):
+        return finalize_output(obj.model_dump(exclude_none=True), agent_name)
+
+    # 2. Convert dataclass → dict
+    if is_dataclass(obj) and not isinstance(obj, type):
+        return finalize_output(asdict(obj), agent_name)
+
+    # 3. Dictionary: clean keys, rename output_data → output, add agent
+    if isinstance(obj, dict):
+        new_dict = {}
+        for k, v in obj.items():
+            # Special handling for ReasoningStep-like structures
+            if k == "output_data":
+                new_dict["output"] = finalize_output(v, agent_name)
+                continue
+            if k == "agent" and v is None:
+                new_dict[k] = agent_name
+                continue
+            # Skip None values
+            if v is not None:
+                new_dict[k] = finalize_output(v, agent_name)
+        # Auto-add agent if this looks like a ReasoningStep
+        if "step_number" in new_dict and "description" in new_dict:
+            new_dict.setdefault("agent", agent_name)
+        return new_dict
+
+    # 4. List: filter None and recurse
+    if isinstance(obj, list):
+        return [finalize_output(item, agent_name) for item in obj if item is not None]
+
+    # 5. Primitive types — return as is
+    return obj
+
+
 class MCPRequest(BaseModel):
     method: str
-    params: dict
+    params: Dict[str, Any]
     id: int | None = None
-
-
-def remove_nulls(obj):
-    """
-    Recursively remove None/null values from dicts, lists and Pydantic models
-    This makes JSON responses cleaner in the UI
-    """
-    if isinstance(obj, BaseModel):
-        # Convert model → dict without None
-        return remove_nulls(obj.model_dump(exclude_none=True))
-
-    if isinstance(obj, dict):
-        return {
-            k: remove_nulls(v)
-            for k, v in obj.items()
-            if v is not None
-        }
-
-    if isinstance(obj, list):
-        return [remove_nulls(item) for item in obj if item is not None]
-
-    return obj
 
 
 class MCPAgent:
@@ -48,7 +72,7 @@ class MCPAgent:
         self.app = FastAPI()
         self.tools: Dict[str, Any] = {}
 
-        # Enable CORS for web UI
+        # Enable CORS for web UI / frontend
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
@@ -64,7 +88,7 @@ class MCPAgent:
         @self.app.get("/")
         def root():
             return {
-                "message": "Cloud9 AI Scouting Agent",
+                "message": "Multi-Agent DevOps Agent",
                 "agent": self.name,
                 "available_tools": list(self.tools.keys()),
                 "docs": "/docs"
@@ -73,11 +97,8 @@ class MCPAgent:
         @self.app.post("/mcp")
         async def mcp(request: Request):
             try:
-                # Get raw body
                 body = await request.body()
-                # Parse JSON
                 data = json.loads(body.decode('utf-8'))
-                # Validate with Pydantic
                 req = MCPRequest(**data)
             except json.JSONDecodeError as e:
                 return {
@@ -97,38 +118,30 @@ class MCPAgent:
                     "details": str(e)
                 }
 
+            # Normalize tool name (remove "tools/" prefix if present)
             tool_name = req.method.replace("tools/", "")
-            if tool_name not in self.tools:
+            handler = self.tools.get(tool_name)
+
+            if not handler:
                 return {
                     "error": f"Unknown tool: {tool_name}",
                     "available_tools": list(self.tools.keys())
                 }
 
-            handler = self.tools[tool_name]
-
             try:
-                # Execute handler (async or sync)
+                # Execute the tool (sync or async)
                 if inspect.iscoroutinefunction(handler):
                     result = await handler(**req.params)
                 else:
                     result = handler(**req.params)
 
-                # Auto-fill agent field in reasoning steps
-                if isinstance(result, dict) and "reasoning" in result:
-                    for step in result["reasoning"]:
-                        if isinstance(step, dict):
-                            step.setdefault("agent", self.name)
-                        elif hasattr(step, "agent"):
-                            if getattr(step, "agent", None) is None:
-                                step.agent = self.name
+                # Final clean-up: remove nulls, fix reasoning, add agent name
+                cleaned_result = finalize_output(result, self.name)
 
-                # ✅ Remove all null values for cleaner UI display
-                result = remove_nulls(result)
-
-                return result
+                return cleaned_result
 
             except TypeError as e:
-                # Better error message for parameter mismatches
+                # Better error for parameter mismatch
                 sig = inspect.signature(handler)
                 expected_params = [p for p in sig.parameters.keys() if p != "self"]
                 return {
@@ -143,6 +156,9 @@ class MCPAgent:
                     "details": str(e)
                 }
 
-    def register_tool(self, name: str, handler):
-        self.tools[name] = handler
-        logging.getLogger(self.name).info(f"Registered tool: {name}")
+    def register_tool(self, name: str, func):
+        """
+        Register a tool function (sync or async) without wrapper/adapter
+        The function will receive **kwargs directly from params
+        """
+        self.tools[name] = func
